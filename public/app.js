@@ -826,19 +826,26 @@ async function generateCompleteTree() {
   loadingMsg.style.display = 'block';
   
   try {
-    // Récupérer toutes les données
-    const response = await fetch(`${API_URL}/persons`);
-    const allPeople = await response.json();
+    // Récupérer toutes les données via l'API tree qui inclut unions et unionChildren
+    const response = await fetch(`${API_URL}/tree`);
+    const treeApiData = await response.json();
     
-    const relationsResponse = await fetch(`${API_URL}/relations`);
-    const allRelations = await relationsResponse.json();
+    console.log('Données arbre reçues:', treeApiData);
+    
+    // Extraire les données
+    const allPeople = treeApiData.persons || [];
+    const unions = treeApiData.unions || [];
+    const unionChildren = treeApiData.unionChildren || [];
+    const relations = treeApiData.relations || []; // Relations parent/frere
     
     // Sauvegarder pour utilisation ultérieure
     treeData.people = allPeople;
-    treeData.relations = allRelations;
+    treeData.relations = relations;
+    treeData.unions = unions;
+    treeData.unionChildren = unionChildren;
     
     // Dessiner l'arbre sur le Canvas à partir de la personne sélectionnée
-    drawCompleteTreeFromPerson(ctx, canvas, allPeople, allRelations, selectedPersonId);
+    drawCompleteTreeFromPerson(ctx, canvas, allPeople, relations, unions, unionChildren, selectedPersonId);
     
     loadingMsg.style.display = 'none';
   } catch (error) {

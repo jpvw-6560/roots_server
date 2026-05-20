@@ -14,6 +14,7 @@ const personsRoutes = require('../routes/persons');
 const relationsRoutes = require('../routes/relations');
 const mediasRoutes = require('../routes/medias');
 const treeRoutes = require('../routes/tree');
+const unionsRoutes = require('../routes/unions');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/persons', personsRoutes);
 app.use('/api/relations', relationsRoutes);
 app.use('/api/medias', mediasRoutes);
 app.use('/api/tree', treeRoutes);
+app.use('/api/unions', unionsRoutes);
 
 // Route pour la configuration
 app.get('/api/config', (req, res) => {

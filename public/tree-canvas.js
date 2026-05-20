@@ -44,34 +44,77 @@ function getBranchState(personId) {
  * Construire l'arbre avec système de générations
  * generation = 0 pour personne centrale, -1/-2/... pour ancêtres, +1/+2/... pour descendants
  */
-function buildCompleteTreeFromPerson(people, relations, centralPersonId) {
-  console.log('=== buildCompleteTreeFromPerson (VERSION PRO) ===');
+function buildCompleteTreeFromPerson(people, relations, unions, unionChildren, centralPersonId) {
+  console.log('=== buildCompleteTreeFromPerson (VERSION PRO avec Unions) ===');
   console.log('Personne centrale:', centralPersonId);
+  console.log('Unions:', unions);
+  console.log('Union Children:', unionChildren);
   
   // Créer les maps de relations
   const parentsMap = new Map(); // child_id -> [parent_ids]
   const childrenMap = new Map(); // parent_id -> [child_ids]
   const spousesMap = new Map(); // person_id -> [spouse_ids]
   
+  // Construire childrenMap et spousesMap à partir des unions
+  unions.forEach(union => {
+    // Ajouter les conjoints
+    if (union.person1_id && union.person2_id) {
+      if (!spousesMap.has(union.person1_id)) spousesMap.set(union.person1_id, []);
+      if (!spousesMap.has(union.person2_id)) spousesMap.set(union.person2_id, []);
+      if (!spousesMap.get(union.person1_id).includes(union.person2_id)) {
+        spousesMap.get(union.person1_id).push(union.person2_id);
+      }
+      if (!spousesMap.get(union.person2_id).includes(union.person1_id)) {
+        spousesMap.get(union.person2_id).push(union.person1_id);
+      }
+    }
+    
+    // Ajouter les enfants de cette union
+    const childrenOfUnion = unionChildren.filter(uc => uc.union_id === union.id);
+    childrenOfUnion.forEach(uc => {
+      // Les deux parents de l'union sont parents de l'enfant
+      if (union.person1_id) {
+        if (!childrenMap.has(union.person1_id)) childrenMap.set(union.person1_id, []);
+        if (!childrenMap.get(union.person1_id).includes(uc.child_id)) {
+          childrenMap.get(union.person1_id).push(uc.child_id);
+        }
+        if (!parentsMap.has(uc.child_id)) parentsMap.set(uc.child_id, []);
+        if (!parentsMap.get(uc.child_id).includes(union.person1_id)) {
+          parentsMap.get(uc.child_id).push(union.person1_id);
+        }
+      }
+      if (union.person2_id) {
+        if (!childrenMap.has(union.person2_id)) childrenMap.set(union.person2_id, []);
+        if (!childrenMap.get(union.person2_id).includes(uc.child_id)) {
+          childrenMap.get(union.person2_id).push(uc.child_id);
+        }
+        if (!parentsMap.has(uc.child_id)) parentsMap.set(uc.child_id, []);
+        if (!parentsMap.get(uc.child_id).includes(union.person2_id)) {
+          parentsMap.get(uc.child_id).push(union.person2_id);
+        }
+      }
+    });
+  });
+  
+  // Traiter aussi les relations parent/enfant classiques (pour compatibilité)
   relations.forEach(rel => {
     if (rel.type_relation === 'parent') {
       if (!childrenMap.has(rel.person1_id)) childrenMap.set(rel.person1_id, []);
-      childrenMap.get(rel.person1_id).push(rel.person2_id);
+      if (!childrenMap.get(rel.person1_id).includes(rel.person2_id)) {
+        childrenMap.get(rel.person1_id).push(rel.person2_id);
+      }
       if (!parentsMap.has(rel.person2_id)) parentsMap.set(rel.person2_id, []);
-      parentsMap.get(rel.person2_id).push(rel.person1_id);
+      if (!parentsMap.get(rel.person2_id).includes(rel.person1_id)) {
+        parentsMap.get(rel.person2_id).push(rel.person1_id);
+      }
     } else if (rel.type_relation === 'enfant') {
       if (!childrenMap.has(rel.person2_id)) childrenMap.set(rel.person2_id, []);
-      childrenMap.get(rel.person2_id).push(rel.person1_id);
-      if (!parentsMap.has(rel.person1_id)) parentsMap.set(rel.person1_id, []);
-      parentsMap.get(rel.person1_id).push(rel.person2_id);
-    } else if (rel.type_relation === 'conjoint') {
-      if (!spousesMap.has(rel.person1_id)) spousesMap.set(rel.person1_id, []);
-      if (!spousesMap.has(rel.person2_id)) spousesMap.set(rel.person2_id, []);
-      if (!spousesMap.get(rel.person1_id).includes(rel.person2_id)) {
-        spousesMap.get(rel.person1_id).push(rel.person2_id);
+      if (!childrenMap.get(rel.person2_id).includes(rel.person1_id)) {
+        childrenMap.get(rel.person2_id).push(rel.person1_id);
       }
-      if (!spousesMap.get(rel.person2_id).includes(rel.person1_id)) {
-        spousesMap.get(rel.person2_id).push(rel.person1_id);
+      if (!parentsMap.has(rel.person1_id)) parentsMap.set(rel.person1_id, []);
+      if (!parentsMap.get(rel.person1_id).includes(rel.person2_id)) {
+        parentsMap.get(rel.person1_id).push(rel.person2_id);
       }
     }
   });
@@ -1029,11 +1072,11 @@ function collectAllNodesFromTree(node, allNodes = [], allSpouses = [], visited =
 /**
  * Fonction principale de dessin
  */
-function drawCompleteTreeFromPerson(ctx, canvas, people, relations, centralPersonId) {
-  console.log('=== drawCompleteTreeFromPerson (VERSION PRO) ===');
+function drawCompleteTreeFromPerson(ctx, canvas, people, relations, unions, unionChildren, centralPersonId) {
+  console.log('=== drawCompleteTreeFromPerson (VERSION PRO avec Unions) ===');
   
   // 1. Construire l'arbre
-  const treeData = buildCompleteTreeFromPerson(people, relations, centralPersonId);
+  const treeData = buildCompleteTreeFromPerson(people, relations, unions, unionChildren, centralPersonId);
   if (!treeData.root) {
     console.error('Impossible de construire l\'arbre');
     return;

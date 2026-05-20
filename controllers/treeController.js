@@ -2,6 +2,7 @@
 // Contrôleur pour la génération de l'arbre généalogique
 
 const Person = require('../models/Person');
+const Union = require('../models/Union');
 
 /**
  * Génère les données de l'arbre généalogique pour une personne
@@ -74,6 +75,7 @@ async function buildAncestorsTree(personId, generations, currentGen = 0, visited
 
 /**
  * Construit l'arbre des descendants
+ * Utilise le modèle Union pour gérer correctement les remariages
  */
 async function buildDescendantsTree(personId, generations, currentGen = 0, visited = new Set()) {
   if (currentGen >= generations || visited.has(personId)) {
@@ -85,8 +87,8 @@ async function buildDescendantsTree(personId, generations, currentGen = 0, visit
   const person = await Person.getById(personId);
   if (!person) return null;
   
-  const children = await Person.getChildren(personId);
-  const spouses = await Person.getSpouses(personId);
+  // Récupérer toutes les unions de cette personne
+  const unions = await Union.getByPersonId(personId);
   
   const node = {
     id: person.id,
@@ -96,21 +98,36 @@ async function buildDescendantsTree(personId, generations, currentGen = 0, visit
     date_naissance: person.date_naissance,
     date_deces: person.date_deces,
     photo: person.photo_principale,
-    spouses: spouses.map(s => ({
-      id: s.id,
-      nom: s.nom,
-      prenom: s.prenom,
-      date_debut: s.date_debut,
-      date_fin: s.date_fin
-    })),
-    children: []
+    unions: [] // Nouvelle structure : liste des unions avec leurs enfants
   };
   
-  for (const child of children) {
-    const childTree = await buildDescendantsTree(child.id, generations, currentGen + 1, visited);
-    if (childTree) {
-      node.children.push(childTree);
+  // Pour chaque union, récupérer le conjoint et les enfants
+  for (const union of unions) {
+    const spouse = await Union.getSpouse(union.id, personId);
+    const children = await Union.getChildren(union.id);
+    
+    const unionData = {
+      id: union.id,
+      type_union: union.type_union,
+      date_debut: union.date_debut,
+      date_fin: union.date_fin,
+      spouse: spouse ? {
+        id: spouse.id,
+        nom: spouse.nom,
+        prenom: spouse.prenom
+      } : null,
+      children: []
+    };
+    
+    // Construire récursivement l'arbre pour chaque enfant
+    for (const child of children) {
+      const childTree = await buildDescendantsTree(child.id, generations, currentGen + 1, visited);
+      if (childTree) {
+        unionData.children.push(childTree);
+      }
     }
+    
+    node.unions.push(unionData);
   }
   
   return node;
@@ -150,17 +167,28 @@ exports.getStats = async (req, res) => {
 exports.getFullTree = async (req, res) => {
   try {
     const persons = await Person.getAll();
+    const unions = await Union.getAll();
     const { pool } = require('../config/database');
     
-    // Récupérer toutes les relations
+    // Récupérer aussi les anciennes relations pour compatibilité (parent, frere)
     const [relations] = await pool.query(`
       SELECT person1_id, person2_id, type_relation, date_debut, date_fin
       FROM relations
+      WHERE type_relation IN ('parent', 'enfant', 'frere')
+    `);
+    
+    // Récupérer les associations union-enfants
+    const [unionChildren] = await pool.query(`
+      SELECT union_id, child_id, ordre_naissance
+      FROM union_children
+      ORDER BY union_id, ordre_naissance
     `);
     
     res.json({
       persons,
-      relations
+      unions,
+      unionChildren,
+      relations // Pour les relations parent/frere qui existent encore
     });
   } catch (error) {
     console.error('Erreur getFullTree:', error);
