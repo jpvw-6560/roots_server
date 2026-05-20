@@ -1,0 +1,511 @@
+// app.js - NeoGenea Frontend
+
+const API_URL = '/api';
+let allPersons = [];
+let currentPersonId = null;
+
+// Initialisation au chargement de la page
+document.addEventListener('DOMContentLoaded', () => {
+  initNavigation();
+  initForms();
+  loadPersons();
+  loadStats();
+});
+
+// Navigation entre les vues
+function initNavigation() {
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      showView(view);
+      
+      // Mettre à jour les boutons actifs
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+}
+
+function showView(viewName) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(`view-${viewName}`).classList.add('active');
+  
+  // Actions spécifiques selon la vue
+  if (viewName === 'tree') {
+    populateTreePersonSelect();
+  }
+}
+
+// Chargement des statistiques
+async function loadStats() {
+  try {
+    const response = await fetch(`${API_URL}/tree/stats/all`);
+    const stats = await response.json();
+    
+    document.getElementById('stat-persons').textContent = 
+      `${stats.total_persons || 0} personne${stats.total_persons > 1 ? 's' : ''}`;
+    document.getElementById('stat-relations').textContent = 
+      `${stats.total_relations || 0} relation${stats.total_relations > 1 ? 's' : ''}`;
+    document.getElementById('stat-medias').textContent = 
+      `${stats.total_medias || 0} média${stats.total_medias > 1 ? 's' : ''}`;
+  } catch (error) {
+    console.error('Erreur chargement stats:', error);
+  }
+}
+
+// Chargement de toutes les personnes
+async function loadPersons() {
+  try {
+    const response = await fetch(`${API_URL}/persons`);
+    allPersons = await response.json();
+    displayPersons(allPersons);
+  } catch (error) {
+    console.error('Erreur chargement personnes:', error);
+    document.getElementById('persons-list').innerHTML = 
+      '<p class="error">Erreur de chargement</p>';
+  }
+}
+
+// Affichage de la liste des personnes
+function displayPersons(persons) {
+  const container = document.getElementById('persons-list');
+  
+  if (persons.length === 0) {
+    container.innerHTML = '<p class="info">Aucune personne enregistrée</p>';
+    return;
+  }
+  
+  container.innerHTML = persons.map(person => `
+    <div class="person-card" onclick="showPersonDetail(${person.id})">
+      ${person.photo ? 
+        `<img src="${person.photo}" alt="${person.prenom} ${person.nom}" class="photo">` :
+        '<div class="photo" style="background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 2em;">👤</div>'
+      }
+      <div class="name">${person.prenom || ''} ${person.nom}</div>
+      <div class="info">
+        ${person.sexe === 'M' ? '♂' : person.sexe === 'F' ? '♀' : '⚲'} 
+        ${person.vivant ? 'Vivant(e)' : 'Décédé(e)'}
+      </div>
+      ${person.date_naissance ? `
+        <div class="dates">
+          Né(e) le ${formatDate(person.date_naissance)}
+        </div>
+      ` : ''}
+    </div>
+  `).join('');
+}
+
+// Affichage du détail d'une personne
+async function showPersonDetail(personId) {
+  showView('detail');
+  currentPersonId = personId;
+  
+  const container = document.getElementById('person-detail');
+  container.innerHTML = '<p class="loading">Chargement...</p>';
+  
+  try {
+    const response = await fetch(`${API_URL}/persons/${personId}`);
+    const person = await response.json();
+    
+    container.innerHTML = `
+      <div class="person-detail-header">
+        ${person.photo_principale ? 
+          `<img src="${person.photo_principale}" alt="${person.prenom} ${person.nom}" class="person-detail-photo">` :
+          '<div class="person-detail-photo" style="background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 4em;">👤</div>'
+        }
+        <div class="person-detail-info">
+          <h2>${person.prenom || ''} ${person.nom}</h2>
+          ${person.nom_jeune_fille ? `<div class="info-item"><span class="info-label">Nom de jeune fille:</span>${person.nom_jeune_fille}</div>` : ''}
+          <div class="info-item"><span class="info-label">Sexe:</span>${person.sexe === 'M' ? 'Masculin' : person.sexe === 'F' ? 'Féminin' : 'Autre'}</div>
+          ${person.date_naissance ? `<div class="info-item"><span class="info-label">Naissance:</span>${formatDate(person.date_naissance)}${person.lieu_naissance ? ' à ' + person.lieu_naissance : ''}</div>` : ''}
+          ${person.date_deces ? `<div class="info-item"><span class="info-label">Décès:</span>${formatDate(person.date_deces)}${person.lieu_deces ? ' à ' + person.lieu_deces : ''}</div>` : ''}
+          <div class="info-item"><span class="info-label">Statut:</span>${person.vivant ? '✅ Vivant(e)' : '🕊️ Décédé(e)'}</div>
+          
+          <div style="margin-top: 20px; display: flex; gap: 10px;">
+            <button class="btn btn-primary btn-small" onclick="editPerson(${person.id})">✏️ Modifier</button>
+            <button class="btn btn-secondary btn-small" onclick="openRelationModal(${person.id})">🔗 Ajouter relation</button>
+            <button class="btn btn-danger btn-small" onclick="deletePerson(${person.id})">🗑️ Supprimer</button>
+          </div>
+        </div>
+      </div>
+      
+      ${person.biographie ? `
+        <div class="section">
+          <h3>📝 Biographie</h3>
+          <p>${person.biographie}</p>
+        </div>
+      ` : ''}
+      
+      <div class="section">
+        <h3>👨‍👩‍👧‍👦 Relations</h3>
+        ${displayRelations(person.relations)}
+      </div>
+      
+      ${person.medias && person.medias.length > 0 ? `
+        <div class="section">
+          <h3>📸 Médias (${person.medias.length})</h3>
+          <div class="medias-grid">
+            ${person.medias.map(m => `
+              <div class="media-item">
+                ${m.type_media === 'photo' ? `<img src="${m.chemin_fichier}" alt="${m.description || ''}" style="max-width: 150px; border-radius: 8px;">` : `<p>📄 ${m.description || 'Document'}</p>`}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+  } catch (error) {
+    console.error('Erreur chargement personne:', error);
+    container.innerHTML = '<p class="error">Erreur de chargement</p>';
+  }
+}
+
+// Affichage des relations
+function displayRelations(relations) {
+  if (!relations || relations.length === 0) {
+    return '<p class="info">Aucune relation enregistrée</p>';
+  }
+  
+  return `<div class="relations-list">${relations.map(rel => `
+    <div class="relation-item">
+      <div>
+        <span class="type">${getRelationLabel(rel.type_relation)}</span>
+        <span>${rel.person2_prenom} ${rel.person2_nom}</span>
+      </div>
+      <button class="btn btn-danger btn-small" onclick="deleteRelation(${rel.id})">🗑️</button>
+    </div>
+  `).join('')}</div>`;
+}
+
+function getRelationLabel(type) {
+  const labels = {
+    'parent': '👨 Parent',
+    'enfant': '👶 Enfant',
+    'conjoint': '💑 Conjoint',
+    'frere': '👨‍👦 Frère',
+    'soeur': '👩‍👧 Sœur'
+  };
+  return labels[type] || type;
+}
+
+// Gestion du formulaire de personne
+function initForms() {
+  document.getElementById('person-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await savePerson();
+  });
+  
+  document.getElementById('relation-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await saveRelation();
+  });
+  
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    if (e.target.value.length >= 2) {
+      searchPersons();
+    }
+  });
+}
+
+async function savePerson() {
+  const formData = new FormData(document.getElementById('person-form'));
+  const data = {
+    nom: formData.get('nom'),
+    prenom: formData.get('prenom'),
+    nom_jeune_fille: formData.get('nom_jeune_fille'),
+    sexe: formData.get('sexe'),
+    date_naissance: formData.get('date_naissance') || null,
+    lieu_naissance: formData.get('lieu_naissance'),
+    date_deces: formData.get('date_deces') || null,
+    lieu_deces: formData.get('lieu_deces'),
+    biographie: formData.get('biographie'),
+    vivant: document.getElementById('vivant').checked
+  };
+  
+  const personId = document.getElementById('person-id').value;
+  
+  try {
+    const response = await fetch(
+      `${API_URL}/persons${personId ? '/' + personId : ''}`,
+      {
+        method: personId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }
+    );
+    
+    if (response.ok) {
+      alert(personId ? 'Personne modifiée avec succès' : 'Personne créée avec succès');
+      resetForm();
+      showView('list');
+      loadPersons();
+      loadStats();
+    } else {
+      const error = await response.json();
+      alert('Erreur: ' + error.error);
+    }
+  } catch (error) {
+    console.error('Erreur sauvegarde:', error);
+    alert('Erreur lors de la sauvegarde');
+  }
+}
+
+async function editPerson(personId) {
+  try {
+    const response = await fetch(`${API_URL}/persons/${personId}`);
+    const person = await response.json();
+    
+    document.getElementById('form-title').textContent = 'Modifier une personne';
+    document.getElementById('person-id').value = person.id;
+    document.getElementById('nom').value = person.nom || '';
+    document.getElementById('prenom').value = person.prenom || '';
+    document.getElementById('nom_jeune_fille').value = person.nom_jeune_fille || '';
+    document.getElementById('sexe').value = person.sexe || '';
+    document.getElementById('date_naissance').value = person.date_naissance || '';
+    document.getElementById('lieu_naissance').value = person.lieu_naissance || '';
+    document.getElementById('date_deces').value = person.date_deces || '';
+    document.getElementById('lieu_deces').value = person.lieu_deces || '';
+    document.getElementById('biographie').value = person.biographie || '';
+    document.getElementById('vivant').checked = person.vivant;
+    
+    showView('add');
+  } catch (error) {
+    console.error('Erreur chargement personne:', error);
+    alert('Erreur lors du chargement');
+  }
+}
+
+async function deletePerson(personId) {
+  if (!confirm('Êtes-vous sûr de vouloir supprimer cette personne ?')) return;
+  
+  try {
+    const response = await fetch(`${API_URL}/persons/${personId}`, {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      alert('Personne supprimée avec succès');
+      showView('list');
+      loadPersons();
+      loadStats();
+    } else {
+      const error = await response.json();
+      alert('Erreur: ' + error.error);
+    }
+  } catch (error) {
+    console.error('Erreur suppression:', error);
+    alert('Erreur lors de la suppression');
+  }
+}
+
+function resetForm() {
+  document.getElementById('person-form').reset();
+  document.getElementById('person-id').value = '';
+  document.getElementById('form-title').textContent = 'Ajouter une personne';
+  document.getElementById('vivant').checked = true;
+}
+
+// Gestion des relations
+function openRelationModal(personId) {
+  currentPersonId = personId;
+  document.getElementById('relation-person1').value = personId;
+  
+  // Remplir la liste des personnes
+  const select = document.getElementById('relation-person2');
+  select.innerHTML = '<option value="">Sélectionner une personne</option>' +
+    allPersons
+      .filter(p => p.id !== personId)
+      .map(p => `<option value="${p.id}">${p.prenom} ${p.nom}</option>`)
+      .join('');
+  
+  document.getElementById('relation-modal').classList.add('active');
+}
+
+function closeRelationModal() {
+  document.getElementById('relation-modal').classList.remove('active');
+  document.getElementById('relation-form').reset();
+}
+
+async function saveRelation() {
+  const formData = new FormData(document.getElementById('relation-form'));
+  const data = {
+    person1_id: parseInt(formData.get('person1_id')),
+    person2_id: parseInt(formData.get('person2_id')),
+    type_relation: formData.get('type_relation'),
+    date_debut: formData.get('date_debut') || null,
+    date_fin: formData.get('date_fin') || null
+  };
+  
+  try {
+    const response = await fetch(`${API_URL}/relations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    
+    if (response.ok) {
+      alert('Relation créée avec succès');
+      closeRelationModal();
+      loadStats();
+      if (currentPersonId) {
+        showPersonDetail(currentPersonId);
+      }
+    } else {
+      const error = await response.json();
+      alert('Erreur: ' + error.error);
+    }
+  } catch (error) {
+    console.error('Erreur création relation:', error);
+    alert('Erreur lors de la création de la relation');
+  }
+}
+
+async function deleteRelation(relationId) {
+  if (!confirm('Êtes-vous sûr de vouloir supprimer cette relation ?')) return;
+  
+  try {
+    const response = await fetch(`${API_URL}/relations/${relationId}`, {
+      method: 'DELETE'
+    });
+    
+    if (response.ok) {
+      alert('Relation supprimée avec succès');
+      loadStats();
+      if (currentPersonId) {
+        showPersonDetail(currentPersonId);
+      }
+    } else {
+      const error = await response.json();
+      alert('Erreur: ' + error.error);
+    }
+  } catch (error) {
+    console.error('Erreur suppression relation:', error);
+    alert('Erreur lors de la suppression');
+  }
+}
+
+// Recherche
+async function searchPersons() {
+  const query = document.getElementById('search-input').value;
+  const container = document.getElementById('search-results');
+  
+  if (query.length < 2) {
+    container.innerHTML = '<p class="info">Entrez au moins 2 caractères pour rechercher</p>';
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${API_URL}/persons/search?q=${encodeURIComponent(query)}`);
+    const results = await response.json();
+    
+    if (results.length === 0) {
+      container.innerHTML = '<p class="info">Aucun résultat</p>';
+    } else {
+      displayPersonsInContainer(results, container);
+    }
+  } catch (error) {
+    console.error('Erreur recherche:', error);
+    container.innerHTML = '<p class="error">Erreur de recherche</p>';
+  }
+}
+
+function displayPersonsInContainer(persons, container) {
+  container.innerHTML = persons.map(person => `
+    <div class="person-card" onclick="showPersonDetail(${person.id})">
+      ${person.photo ? 
+        `<img src="${person.photo}" alt="${person.prenom} ${person.nom}" class="photo">` :
+        '<div class="photo" style="background: #ddd; display: flex; align-items: center; justify-content: center; font-size: 2em;">👤</div>'
+      }
+      <div class="name">${person.prenom || ''} ${person.nom}</div>
+      <div class="info">
+        ${person.sexe === 'M' ? '♂' : person.sexe === 'F' ? '♀' : '⚲'}
+        ${person.vivant ? 'Vivant(e)' : 'Décédé(e)'}
+      </div>
+    </div>
+  `).join('');
+}
+
+// Arbre généalogique
+function populateTreePersonSelect() {
+  const select = document.getElementById('tree-person-select');
+  select.innerHTML = '<option value="">Sélectionner une personne</option>' +
+    allPersons.map(p => `<option value="${p.id}">${p.prenom} ${p.nom}</option>`).join('');
+}
+
+async function generateTree() {
+  const personId = document.getElementById('tree-person-select').value;
+  const type = document.getElementById('tree-type').value;
+  const container = document.getElementById('tree-container');
+  
+  if (!personId) {
+    alert('Veuillez sélectionner une personne');
+    return;
+  }
+  
+  container.innerHTML = '<p class="loading">Génération de l\'arbre...</p>';
+  
+  try {
+    const response = await fetch(`${API_URL}/tree/${personId}?type=${type}&generations=3`);
+    const tree = await response.json();
+    
+    container.innerHTML = '<div style="text-align: center;">' + renderTree(tree) + '</div>';
+  } catch (error) {
+    console.error('Erreur génération arbre:', error);
+    container.innerHTML = '<p class="error">Erreur lors de la génération de l\'arbre</p>';
+  }
+}
+
+function renderTree(tree) {
+  let html = '<div style="padding: 20px;">';
+  
+  // Personne racine
+  if (tree.root) {
+    html += `
+      <div class="tree-node" onclick="showPersonDetail(${tree.root.id})">
+        <div class="name">${tree.root.prenom || ''} ${tree.root.nom}</div>
+        <div class="dates">
+          ${tree.root.date_naissance ? formatDate(tree.root.date_naissance) : '?'} - 
+          ${tree.root.date_deces ? formatDate(tree.root.date_deces) : tree.root.vivant ? '...' : '?'}
+        </div>
+      </div>
+    `;
+  }
+  
+  // Ascendants
+  if (tree.ancestors && tree.ancestors.parents && tree.ancestors.parents.length > 0) {
+    html += '<div style="margin-top: 30px;"><h4>Ascendants</h4>';
+    html += renderTreeNodes(tree.ancestors.parents);
+    html += '</div>';
+  }
+  
+  // Descendants
+  if (tree.descendants && tree.descendants.children && tree.descendants.children.length > 0) {
+    html += '<div style="margin-top: 30px;"><h4>Descendants</h4>';
+    html += renderTreeNodes(tree.descendants.children);
+    html += '</div>';
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+function renderTreeNodes(nodes) {
+  return '<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px;">' +
+    nodes.map(node => `
+      <div class="tree-node" onclick="showPersonDetail(${node.id})">
+        <div class="name">${node.prenom || ''} ${node.nom}</div>
+        <div class="dates">
+          ${node.date_naissance ? formatDate(node.date_naissance) : '?'} - 
+          ${node.date_deces ? formatDate(node.date_deces) : '...'}
+        </div>
+      </div>
+    `).join('') +
+    '</div>';
+}
+
+// Utilitaires
+function formatDate(dateString) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('fr-FR');
+}

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeoGenea - Arbre Généalogique</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header avec menu burger et toggle édition -->
+    <header class="header">
+      <div class="header-top">
+        <button class="burger-menu" id="burger-menu">☰</button>
+        <h1>🌳 NeoGenea</h1>
+        <div class="header-controls">
+          <div class="edit-mode-toggle">
+            <label class="switch">
+              <input type="checkbox" id="edit-mode-toggle">
+              <span class="slider"></span>
+            </label>
+            <span id="edit-mode-label">🔒 Verrouillé</span>
+          </div>
+        </div>
+      </div>
+      <div class="stats" id="stats">
+        <span id="stat-persons">0 personnes</span>
+        <span id="stat-relations">0 relations</span>
+        <span id="stat-medias">0 médias</span>
+      </div>
+    </header>
+
+    <!-- Navigation latérale -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h3>Menu</h3>
+        <button class="close-menu" id="close-menu">✕</button>
+      </div>
+      <button class="nav-btn active" data-view="list">
+        <span class="nav-icon">📋</span>
+        <span class="nav-text">Liste</span>
+      </button>
+      <button class="nav-btn" data-view="tree">
+        <span class="nav-icon">🌳</span>
+        <span class="nav-text">Arbre</span>
+      </button>
+      <button class="nav-btn" data-view="add">
+        <span class="nav-icon">➕</span>
+        <span class="nav-text">Ajouter</span>
+      </button>
+      <button class="nav-btn" data-view="search">
+        <span class="nav-icon">🔍</span>
+        <span class="nav-text">Rechercher</span>
+      </button>
+    </nav>
+
+    <!-- Overlay pour mobile -->
+    <div class="overlay" id="overlay"></div>
+
+    <!-- Main Content -->
+    <main class="content">
+      <!-- Vue Liste -->
+      <div id="view-list" class="view active">
+        <div class="toolbar">
+          <h2>Liste des personnes</h2>
+          <div class="toolbar-controls">
+            <div class="view-mode-switch">
+              <button class="view-mode-btn active" data-mode="cards">🎴 Cartes</button>
+              <button class="view-mode-btn" data-mode="table">📊 Tableau</button>
+            </div>
+            <select id="sort-order" class="form-control">
+              <option value="recent">Plus jeunes d'abord</option>
+              <option value="old">Plus âgés d'abord</option>
+            </select>
+            <button class="btn btn-primary edit-action" onclick="if(editMode) showView('add')">➕ Nouvelle personne</button>
+          </div>
+        </div>
+        <div id="persons-list" class="persons-grid">
+          <p class="loading">Chargement...</p>
+        </div>
+      </div>
+
+      <!-- Vue Arbre généalogique complet -->
+      <div id="view-tree" class="view">
+        <div class="toolbar">
+          <h2>Arbre généalogique complet</h2>
+          <div class="toolbar-controls">
+            <label for="tree-person-select" style="margin-right: 10px;">🌳 Personne centrale :</label>
+            <select id="tree-person-select" class="form-control" style="min-width: 250px;">
+              <option value="">Chargement...</option>
+            </select>
+            <button class="btn btn-primary" id="tree-refresh-btn" onclick="generateCompleteTree()">↻ Actualiser</button>
+          </div>
+        </div>
+        <div id="tree-container" class="tree-container">
+          <canvas id="treeCanvas" class="tree-canvas"></canvas>
+          <p id="tree-loading" class="loading">Génération de l'arbre...</p>
+        </div>
+      </div>
+
+      <!-- Vue Ajout/Modification -->
+      <div id="view-add" class="view">
+        <div class="form-container">
+          <h2 id="form-title">Ajouter une personne</h2>
+          <form id="person-form" enctype="multipart/form-data">
+            <input type="hidden" id="person-id" name="id">
+            
+            <!-- Section Photo -->
+            <div class="form-group photo-upload-section">
+              <label>Photo de profil</label>
+              <div class="photo-upload-container">
+                <div class="photo-preview" id="photo-preview">
+                  <span class="photo-placeholder">📷</span>
+                </div>
+                <div class="photo-upload-controls">
+                  <input type="file" id="photo-upload" accept="image/*" style="display: none;">
+                  <button type="button" class="btn btn-secondary btn-small" onclick="document.getElementById('photo-upload').click()">📁 Choisir une photo</button>
+                  <button type="button" class="btn btn-danger btn-small" id="remove-photo-btn" style="display: none;" onclick="removePhoto()">🗑️ Retirer</button>
+                </div>
+                <small class="form-help">Formats acceptés: JPG, PNG, GIF (max 5Mo)</small>
+              </div>
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nom">Nom *</label>
+                <input type="text" id="nom" name="nom" required>
+              </div>
+              <div class="form-group">
+                <label for="prenom">Prénom</label>
+                <input type="text" id="prenom" name="prenom">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="nom_jeune_fille">Nom de jeune fille</label>
+                <input type="text" id="nom_jeune_fille" name="nom_jeune_fille">
+              </div>
+              <div class="form-group">
+                <label for="sexe">Sexe *</label>
+                <select id="sexe" name="sexe" required>
+                  <option value="">Sélectionner</option>
+                  <option value="M">Masculin</option>
+                  <option value="F">Féminin</option>
+                  <option value="A">Autre</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="date_naissance">Date de naissance</label>
+                <input type="date" id="date_naissance" name="date_naissance">
+              </div>
+              <div class="form-group">
+                <label for="lieu_naissance">Lieu de naissance</label>
+                <input type="text" id="lieu_naissance" name="lieu_naissance">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="date_deces">Date de décès</label>
+                <input type="date" id="date_deces" name="date_deces">
+              </div>
+              <div class="form-group">
+                <label for="lieu_deces">Lieu de décès</label>
+                <input type="text" id="lieu_deces" name="lieu_deces">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="biographie">Biographie</label>
+              <textarea id="biographie" name="biographie" rows="4"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="vivant" name="vivant" checked>
+                Personne vivante
+              </label>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary edit-action">💾 Enregistrer</button>
+              <button type="button" class="btn btn-secondary" onclick="resetForm(); showView('list');">Annuler</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Vue Recherche -->
+      <div id="view-search" class="view">
+        <div class="toolbar">
+          <h2>Rechercher une personne</h2>
+        </div>
+        <div class="form-container">
+          <div class="form-group">
+            <label for="search-input">Nom ou prénom</label>
+            <input type="text" id="search-input" placeholder="Entrez au moins 2 caractères..." class="form-control">
+          </div>
+          <div id="search-results" class="persons-grid">
+            <p class="info">Entrez un terme de recherche</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vue Détail -->
+      <div id="view-detail" class="view">
+        <div id="person-detail">
+          <p class="loading">Chargement...</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal Relation -->
+  <div id="relation-modal" class="modal">
+    <div class="modal-content">
+      <span class="modal-close" onclick="closeRelationModal()">×</span>
+      <h2>Ajouter une relation</h2>
+      <form id="relation-form">
+        <input type="hidden" id="relation-person1" name="person1_id">
+        
+        <div class="form-group">
+          <label for="relation-person2">Personne liée *</label>
+          <select id="relation-person2" name="person2_id" required>
+            <option value="">Sélectionner une personne</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="relation-type">Type de relation *</label>
+          <select id="relation-type" name="type_relation" required>
+            <option value="">Sélectionner</option>
+            <option value="parent">Parent</option>
+            <option value="enfant">Enfant</option>
+            <option value="conjoint">Conjoint</option>
+            <option value="frere">Frère</option>
+            <option value="soeur">Sœur</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="relation-date-debut">Date début</label>
+            <input type="date" id="relation-date-debut" name="date_debut">
+          </div>
+          <div class="form-group">
+            <label for="relation-date-fin">Date fin</label>
+            <input type="date" id="relation-date-fin" name="date_fin">
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">💾 Créer la relation</button>
+          <button type="button" class="btn btn-secondary" onclick="closeRelationModal()">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="tree-canvas.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

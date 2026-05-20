@@ -1,0 +1,115 @@
+========================================
+NEOGENEA - SERVEUR DE GÉNÉALOGIE
+========================================
+
+📍 Répertoire:
+cd ~/Documents/node_appli/roots_server
+
+🚀 Démarrage:
+npm start
+
+🔧 Mode développement (avec auto-reload):
+npm run dev
+
+🛑 Arrêt:
+pkill -f 'node.*roots_server'
+# ou
+Ctrl+C dans le terminal
+
+✅ Vérifier si le serveur tourne:
+ss -tlnp | grep :3007
+lsof -i :3007
+curl http://localhost:3007/api/health
+
+🌐 Accès:
+http://localhost:3007/
+
+📡 Port utilisé: 3007
+
+========================================
+PREMIÈRE INSTALLATION
+========================================
+
+1. Installer les dépendances:
+   npm install
+
+2. Configurer MySQL:
+   - Copier .env.example vers .env
+   - Modifier les identifiants MySQL dans .env
+   
+3. Créer la base de données:
+   mysql -u root -p
+   CREATE DATABASE neogenea CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   exit
+   
+4. Les tables seront créées automatiquement au premier démarrage
+
+========================================
+STRUCTURE DU PROJET
+========================================
+
+roots_server/
+├── config/          # Configuration (base de données, etc.)
+├── controllers/     # Logique métier
+├── models/          # Modèles de données
+├── routes/          # Routes API
+├── src/             # Serveur principal
+├── public/          # Interface web (HTML/CSS/JS)
+├── uploads/         # Fichiers uploadés (photos, documents)
+└── doc/            # Documentation
+
+========================================
+API ENDPOINTS
+========================================
+
+Personnes:
+- GET    /api/persons          → Liste toutes les personnes
+- GET    /api/persons/:id      → Détail d'une personne
+- POST   /api/persons          → Créer une personne
+- PUT    /api/persons/:id      → Modifier une personne
+- DELETE /api/persons/:id      → Supprimer une personne
+- GET    /api/persons/search   → Rechercher (query: ?q=...)
+
+Relations:
+- GET    /api/relations        → Liste toutes les relations
+- POST   /api/relations        → Créer une relation
+- DELETE /api/relations/:id    → Supprimer une relation
+
+Arbre:
+- GET    /api/tree/:personId   → Générer arbre d'une personne
+- GET    /api/tree/stats/all   → Statistiques globales
+
+Médias:
+- POST   /api/medias/upload    → Upload un fichier
+- GET    /api/medias/person/:personId → Médias d'une personne
+- DELETE /api/medias/:id       → Supprimer un média
+
+========================================
+TECHNOLOGIES
+========================================
+
+Backend:
+- Node.js + Express
+- MySQL (avec mysql2)
+- Multer (upload de fichiers)
+
+Frontend:
+- HTML5 / CSS3 / JavaScript vanilla
+- Interface responsive
+
+========================================
+AIDE & DÉPANNAGE
+========================================
+
+Erreur de connexion MySQL:
+→ Vérifier les identifiants dans .env
+→ Vérifier que MySQL est démarré:
+  sudo systemctl status mysql
+
+Port 3007 déjà utilisé:
+→ Changer le port dans .env (PORT=3008)
+→ Ou arrêter l'autre processus
+
+Base de données non créée:
+→ Se connecter à MySQL et créer manuellement:
+  CREATE DATABASE neogenea;
