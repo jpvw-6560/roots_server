@@ -10,6 +10,7 @@ let treeZoomLevel = 1.0;
 let currentPhotoFile = null; // Fichier photo en attente d'upload
 let currentPhotoUrl = null; // URL de la photo existante
 let treeData = { generations: null, relations: null }; // Données de l'arbre pour redessiner les connexions
+let addRelativeContext = null; // Contexte pour ajout rapide depuis l'arbre (ex: {personId: 123, relationType: 'child'})
 
 // Initialisation au chargement de la page
 document.addEventListener('DOMContentLoaded', () => {
@@ -97,6 +98,51 @@ function showLockedMessage() {
   setTimeout(() => {
     msg.remove();
   }, 3000);
+}
+
+/**
+ * Gérer l'ajout rapide d'un proche depuis l'arbre
+ * @param {number} personId - ID de la personne de référence
+ * @param {string} relationType - Type: 'parent', 'child', 'sibling', 'spouse'
+ */
+function handleAddRelative(personId, relationType) {
+  if (!checkEditMode()) return;
+  
+  console.log('Ajout rapide:', relationType, 'pour personne', personId);
+  
+  // Stocker le contexte pour créer la relation après l'ajout de la personne
+  addRelativeContext = {
+    personId: personId,
+    relationType: relationType
+  };
+  
+  // Basculer vers la vue d'ajout
+  showView('add');
+  
+  // Mettre à jour le titre du formulaire
+  const formTitle = document.getElementById('form-title');
+  const relationLabels = {
+    parent: 'Ajouter un parent',
+    child: 'Ajouter un enfant',
+    sibling: 'Ajouter un frère/sœur',
+    spouse: 'Ajouter un(e) conjoint(e)'
+  };
+  formTitle.textContent = relationLabels[relationType] || 'Ajouter une personne';
+  
+  // Message d'information
+  const form = document.getElementById('person-form');
+  let infoMsg = form.querySelector('.add-relative-info');
+  if (!infoMsg) {
+    infoMsg = document.createElement('div');
+    infoMsg.className = 'add-relative-info';
+    infoMsg.style.cssText = 'padding: 12px; background: #e3f2fd; border-left: 4px solid #2196F3; margin-bottom: 20px; border-radius: 4px;';
+    form.insertBefore(infoMsg, form.firstChild);
+  }
+  
+  const person = allPersons.find(p => p.id == personId);
+  const personName = person ? `${person.prenom || ''} ${person.nom || ''}`.trim() : 'cette personne';
+  
+  infoMsg.innerHTML = `ℹ️ Une relation sera automatiquement créée avec <strong>${personName}</strong> après l'enregistrement.`;
 }
 
 // Switch vue cartes/tableau
@@ -508,9 +554,23 @@ async function savePerson() {
         await uploadPhoto(actualPersonId, currentPhotoFile);
       }
       
+      // Si on est dans un contexte d'ajout rapide depuis l'arbre, créer la relation
+      if (addRelativeContext && !personId) {  // Seulement pour les nouvelles personnes
+        await createRelationFromContext(actualPersonId, addRelativeContext);
+      }
+      
       alert(personId ? 'Personne modifiée avec succès' : 'Personne créée avec succès');
       resetForm();
-      showView('list');
+      
+      // Si on était dans un contexte d'ajout depuis l'arbre, retourner à la vue arbre
+      if (addRelativeContext) {
+        addRelativeContext = null;
+        showView('tree');
+        generateCompleteTree(); // Recharger l'arbre
+      } else {
+        showView('list');
+      }
+      
       loadPersons();
       loadStats();
     } else {
@@ -542,6 +602,84 @@ async function uploadPhoto(personId, photoFile) {
     }
   } catch (error) {
     console.error('Erreur upload photo:', error);
+  }
+}
+
+/**
+ * Créer automatiquement une relation après ajout d'un proche
+ * @param {number} newPersonId - ID de la personne nouvellement créée
+ * @param {object} context - {personId, relationType}
+ */
+async function createRelationFromContext(newPersonId, context) {
+  const { personId, relationType } = context;
+  
+  try {
+    console.log('Création relation:', relationType, 'entre', personId, 'et', newPersonId);
+    
+    // Selon le type, créer la relation appropriée
+    let person1_id, person2_id, type_relation;
+    
+    switch (relationType) {
+      case 'parent':
+        // La personne existante est l'enfant, la nouvelle personne est le parent
+        person1_id = newPersonId;
+        person2_id = personId;
+        type_relation = 'parent';
+        break;
+        
+      case 'child':
+        // La personne existante est le parent, la nouvelle personne est l'enfant
+        // Pour les enfants, il faudrait idéalement créer une union, mais pour simplifier on crée une relation parent
+        person1_id = personId;
+        person2_id = newPersonId;
+        type_relation = 'parent';
+        break;
+        
+      case 'sibling':
+        // Frère ou sœur - relation bidirectionnelle
+        person1_id = personId;
+        person2_id = newPersonId;
+        type_relation = 'frere'; // On utilise "frere" pour tous les siblings
+        break;
+        
+      case 'spouse':
+        // Conjoint - créer une union
+        person1_id = personId;
+        person2_id = newPersonId;
+        
+        // Créer une union plutôt qu'une relation simple
+        const unionResponse = await fetch(`${API_URL}/unions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            person1_id: person1_id,
+            person2_id: person2_id,
+            type_union: 'mariage'
+          })
+        });
+        
+        if (!unionResponse.ok) {
+          console.error('Erreur création union');
+        }
+        return; // Sortir, pas besoin de créer une relation
+    }
+    
+    // Créer la relation
+    const response = await fetch(`${API_URL}/relations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        person1_id: person1_id,
+        person2_id: person2_id,
+        type_relation: type_relation
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('Erreur création relation');
+    }
+  } catch (error) {
+    console.error('Erreur création relation automatique:', error);
   }
 }
 
@@ -609,6 +747,16 @@ function resetForm() {
   document.getElementById('form-title').textContent = 'Ajouter une personne';
   document.getElementById('vivant').checked = true;
   removePhoto(); // Réinitialiser la photo
+  
+  // Nettoyer le contexte d'ajout rapide
+  addRelativeContext = null;
+  
+  // Supprimer le message d'information si présent
+  const form = document.getElementById('person-form');
+  const infoMsg = form.querySelector('.add-relative-info');
+  if (infoMsg) {
+    infoMsg.remove();
+  }
 }
 
 // Gestion des relations
