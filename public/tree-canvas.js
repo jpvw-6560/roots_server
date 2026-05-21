@@ -123,7 +123,7 @@ function buildCompleteTreeFromPerson(people, relations, unions, unionChildren, c
   const personMap = new Map(people.map(p => [p.id, p]));
   
   // Construire l'arbre par générations
-  const tree = buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap);
+  const tree = buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap, relations);
   
   return {
     root: tree,
@@ -137,7 +137,7 @@ function buildCompleteTreeFromPerson(people, relations, unions, unionChildren, c
 /**
  * Construire l'arbre avec structure de générations - VERSION SIMPLIFIÉE
  */
-function buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap) {
+function buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap, relations) {
   const visited = new Set();
   
   function buildNode(personId, generation) {
