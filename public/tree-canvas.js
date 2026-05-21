@@ -726,117 +726,35 @@ function drawNode(ctx, person, hasAncestors = false) {
     };
   }
   
-  // ===== ICÔNES POUR AJOUTER DES PROCHES =====
-  const addIconSize = 20;
-  const addIconStyle = {
-    bg: 'rgba(128, 128, 128, 0.8)',
-    border: '#666666',
-    text: '#ffffff'
-  };
+  // ===== ICÔNE UNIQUE POUR AJOUTER UN PROCHE =====
+  // Position : en bas à droite de la carte
+  const addIconSize = 24;
+  const addIconX = x + width - 15;
+  const addIconY = y + height - 15;
   
-  // Initialiser le tableau des bounds si nécessaire
-  if (!person._addIconBounds) {
-    person._addIconBounds = {};
-  }
-  
-  // 1. AJOUTER UN PARENT (en haut à gauche de la carte)
-  const parentIconX = x + 20;
-  const parentIconY = y - 10;
-  
+  // Cercle vert
   ctx.beginPath();
-  ctx.arc(parentIconX, parentIconY, addIconSize / 2, 0, Math.PI * 2);
-  ctx.fillStyle = addIconStyle.bg;
+  ctx.arc(addIconX, addIconY, addIconSize / 2, 0, Math.PI * 2);
+  ctx.fillStyle = '#4CAF50';
   ctx.fill();
-  ctx.strokeStyle = addIconStyle.border;
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#2E7D32';
+  ctx.lineWidth = 2;
   ctx.stroke();
   
-  ctx.font = 'bold 14px ' + TREE_CONFIG.fontFamily;
-  ctx.fillStyle = addIconStyle.text;
+  // Symbole +
+  ctx.font = 'bold 16px ' + TREE_CONFIG.fontFamily;
+  ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
-  ctx.fillText('+', parentIconX, parentIconY + 5);
+  ctx.fillText('+', addIconX, addIconY + 6);
   
-  person._addIconBounds.parent = {
-    x: parentIconX - addIconSize / 2,
-    y: parentIconY - addIconSize / 2,
+  // Stocker pour détection de clic
+  person._addIconBounds = {
+    x: addIconX - addIconSize / 2,
+    y: addIconY - addIconSize / 2,
     width: addIconSize,
     height: addIconSize,
-    type: 'parent'
-  };
-  
-  // 2. AJOUTER UN ENFANT (en bas au centre)
-  const childIconX = x + width / 2;
-  const childIconY = y + height + 10;
-  
-  ctx.beginPath();
-  ctx.arc(childIconX, childIconY, addIconSize / 2, 0, Math.PI * 2);
-  ctx.fillStyle = addIconStyle.bg;
-  ctx.fill();
-  ctx.strokeStyle = addIconStyle.border;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  
-  ctx.font = 'bold 14px ' + TREE_CONFIG.fontFamily;
-  ctx.fillStyle = addIconStyle.text;
-  ctx.textAlign = 'center';
-  ctx.fillText('+', childIconX, childIconY + 5);
-  
-  person._addIconBounds.child = {
-    x: childIconX - addIconSize / 2,
-    y: childIconY - addIconSize / 2,
-    width: addIconSize,
-    height: addIconSize,
-    type: 'child'
-  };
-  
-  // 3. AJOUTER UN FRÈRE/SŒUR (à gauche au centre)
-  const siblingIconX = x - 10;
-  const siblingIconY = y + height / 2;
-  
-  ctx.beginPath();
-  ctx.arc(siblingIconX, siblingIconY, addIconSize / 2, 0, Math.PI * 2);
-  ctx.fillStyle = addIconStyle.bg;
-  ctx.fill();
-  ctx.strokeStyle = addIconStyle.border;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  
-  ctx.font = 'bold 14px ' + TREE_CONFIG.fontFamily;
-  ctx.fillStyle = addIconStyle.text;
-  ctx.textAlign = 'center';
-  ctx.fillText('+', siblingIconX, siblingIconY + 5);
-  
-  person._addIconBounds.sibling = {
-    x: siblingIconX - addIconSize / 2,
-    y: siblingIconY - addIconSize / 2,
-    width: addIconSize,
-    height: addIconSize,
-    type: 'sibling'
-  };
-  
-  // 4. AJOUTER UN(E) CONJOINT(E) (à droite au centre)
-  const spouseIconX = x + width + 10;
-  const spouseIconY = y + height / 2;
-  
-  ctx.beginPath();
-  ctx.arc(spouseIconX, spouseIconY, addIconSize / 2, 0, Math.PI * 2);
-  ctx.fillStyle = addIconStyle.bg;
-  ctx.fill();
-  ctx.strokeStyle = addIconStyle.border;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  
-  ctx.font = 'bold 14px ' + TREE_CONFIG.fontFamily;
-  ctx.fillStyle = addIconStyle.text;
-  ctx.textAlign = 'center';
-  ctx.fillText('+', spouseIconX, spouseIconY + 5);
-  
-  person._addIconBounds.spouse = {
-    x: spouseIconX - addIconSize / 2,
-    y: spouseIconY - addIconSize / 2,
-    width: addIconSize,
-    height: addIconSize,
-    type: 'spouse'
+    personId: person.id,
+    personName: `${person.prenom || ''} ${person.nom || ''}`.trim()
   };
 }
 
@@ -1352,21 +1270,21 @@ function drawCompleteTreeFromPerson(ctx, canvas, people, relations, unions, unio
       }
     }
     
-    // Vérifier clic sur icônes d'ajout de proches
+    // Vérifier clic sur icône d'ajout de proche (menu contextuel)
     for (const nodeInfo of allNodes) {
       const person = nodeInfo.person;
       if (person._addIconBounds) {
-        for (const [key, bounds] of Object.entries(person._addIconBounds)) {
-          if (x >= bounds.x && x <= bounds.x + bounds.width &&
-              y >= bounds.y && y <= bounds.y + bounds.height) {
-            console.log('Clic sur icône ajout:', bounds.type, 'pour personne:', person.id);
-            
-            // Appeler la fonction appropriée selon le type
-            if (typeof handleAddRelative === 'function') {
-              handleAddRelative(person.id, bounds.type);
-            }
-            return;
+        const bounds = person._addIconBounds;
+        if (x >= bounds.x && x <= bounds.x + bounds.width &&
+            y >= bounds.y && y <= bounds.y + bounds.height) {
+          console.log('Clic sur icône ajout pour personne:', person.id);
+          
+          // Afficher le menu contextuel
+          if (typeof showAddRelativeMenu === 'function') {
+            const rect = canvas.getBoundingClientRect();
+            showAddRelativeMenu(person.id, person.prenom + ' ' + person.nom, e.clientX, e.clientY);
           }
+          return;
         }
       }
     }
@@ -1374,16 +1292,16 @@ function drawCompleteTreeFromPerson(ctx, canvas, people, relations, unions, unio
     // Vérifier aussi pour les conjoints
     for (const spouse of allSpouses) {
       if (spouse._addIconBounds) {
-        for (const [key, bounds] of Object.entries(spouse._addIconBounds)) {
-          if (x >= bounds.x && x <= bounds.x + bounds.width &&
-              y >= bounds.y && y <= bounds.y + bounds.height) {
-            console.log('Clic sur icône ajout:', bounds.type, 'pour conjoint:', spouse.id);
-            
-            if (typeof handleAddRelative === 'function') {
-              handleAddRelative(spouse.id, bounds.type);
-            }
-            return;
+        const bounds = spouse._addIconBounds;
+        if (x >= bounds.x && x <= bounds.x + bounds.width &&
+            y >= bounds.y && y <= bounds.y + bounds.height) {
+          console.log('Clic sur icône ajout pour conjoint:', spouse.id);
+          
+          if (typeof showAddRelativeMenu === 'function') {
+            const rect = canvas.getBoundingClientRect();
+            showAddRelativeMenu(spouse.id, spouse.prenom + ' ' + spouse.nom, e.clientX, e.clientY);
           }
+          return;
         }
       }
     }

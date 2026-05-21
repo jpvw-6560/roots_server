@@ -101,6 +101,70 @@ function showLockedMessage() {
 }
 
 /**
+ * Afficher le menu contextuel pour ajouter un proche
+ * @param {number} personId - ID de la personne de référence
+ * @param {string} personName - Nom de la personne
+ * @param {number} x - Position X du clic
+ * @param {number} y - Position Y du clic
+ */
+function showAddRelativeMenu(personId, personName, x, y) {
+  if (!checkEditMode()) return;
+  
+  // Supprimer le menu existant s'il y en a un
+  const existingMenu = document.getElementById('add-relative-menu');
+  if (existingMenu) {
+    existingMenu.remove();
+  }
+  
+  // Créer le menu
+  const menu = document.createElement('div');
+  menu.id = 'add-relative-menu';
+  menu.className = 'context-menu';
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  
+  // Options du menu
+  const options = [
+    { type: 'parent', label: '👨‍👩 Ajouter un parent', icon: '👆' },
+    { type: 'child', label: '👶 Ajouter un enfant', icon: '👇' },
+    { type: 'sibling', label: '👫 Ajouter un frère/sœur', icon: '↔️' },
+    { type: 'spouse', label: '💑 Ajouter un(e) conjoint(e)', icon: '💍' }
+  ];
+  
+  menu.innerHTML = `
+    <div class="context-menu-header">Ajouter un proche de <strong>${personName}</strong></div>
+    ${options.map(opt => `
+      <div class="context-menu-item" data-type="${opt.type}" data-person-id="${personId}">
+        <span class="context-menu-icon">${opt.icon}</span>
+        <span class="context-menu-label">${opt.label}</span>
+      </div>
+    `).join('')}
+  `;
+  
+  document.body.appendChild(menu);
+  
+  // Gérer les clics sur les options
+  menu.querySelectorAll('.context-menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const type = item.dataset.type;
+      const pId = parseInt(item.dataset.personId);
+      handleAddRelative(pId, type);
+      menu.remove();
+    });
+  });
+  
+  // Fermer le menu si on clique ailleurs
+  setTimeout(() => {
+    document.addEventListener('click', function closeMenu(e) {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    });
+  }, 100);
+}
+
+/**
  * Gérer l'ajout rapide d'un proche depuis l'arbre
  * @param {number} personId - ID de la personne de référence
  * @param {string} relationType - Type: 'parent', 'child', 'sibling', 'spouse'
