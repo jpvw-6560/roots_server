@@ -270,19 +270,36 @@ function buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenM
   const root = buildNode(centralPersonId, 0);
   
   // IMPORTANT: Ajouter les frères/sœurs au même niveau
-  // On les ajoute comme frères/sœurs de la racine, pas comme enfants des parents
-  if (root && root.parents.length > 0) {
-    // Récupérer tous les enfants des parents (= frères et sœurs)
+  // On les récupère de deux façons :
+  // 1. Enfants des mêmes parents (fratrie complète)
+  // 2. Relations "frere" directes (pour fratries sans parents connus)
+  if (root) {
     const siblingsSet = new Set();
     
-    // Collecter tous les enfants de tous les parents
-    root.parents.forEach(parent => {
-      const parentChildIds = childrenMap.get(parent.person.id) || [];
-      parentChildIds.forEach(childId => {
-        if (childId !== centralPersonId) {
-          siblingsSet.add(childId);
-        }
+    // Méthode 1: Collecter tous les enfants des parents communs
+    if (root.parents.length > 0) {
+      root.parents.forEach(parent => {
+        const parentChildIds = childrenMap.get(parent.person.id) || [];
+        parentChildIds.forEach(childId => {
+          if (childId !== centralPersonId) {
+            siblingsSet.add(childId);
+          }
+        });
       });
+    }
+    
+    // Méthode 2: Ajouter aussi les relations "frere" directes
+    relations.forEach(rel => {
+      if (rel.type_relation === 'frere') {
+        // Si person1 est la personne centrale, person2 est un frère/sœur
+        if (rel.person1_id === centralPersonId && rel.person2_id !== centralPersonId) {
+          siblingsSet.add(rel.person2_id);
+        }
+        // Si person2 est la personne centrale, person1 est un frère/sœur
+        if (rel.person2_id === centralPersonId && rel.person1_id !== centralPersonId) {
+          siblingsSet.add(rel.person1_id);
+        }
+      }
     });
     
     // Créer les nœuds de frères/sœurs et les ajouter à la racine

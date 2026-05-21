@@ -680,44 +680,92 @@ async function createRelationFromContext(newPersonId, context) {
   try {
     console.log('Création relation:', relationType, 'entre', personId, 'et', newPersonId);
     
-    // Selon le type, créer la relation appropriée
-    let person1_id, person2_id, type_relation;
-    
     switch (relationType) {
       case 'parent':
-        // La personne existante est l'enfant, la nouvelle personne est le parent
-        person1_id = newPersonId;
-        person2_id = personId;
-        type_relation = 'parent';
+        // La nouvelle personne est un parent de la personne existante
+        // Créer une seule relation: nouveau parent -> personne existante
+        await fetch(`${API_URL}/relations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            person1_id: newPersonId,
+            person2_id: personId,
+            type_relation: 'parent'
+          })
+        });
         break;
         
       case 'child':
-        // La personne existante est le parent, la nouvelle personne est l'enfant
-        // Pour les enfants, il faudrait idéalement créer une union, mais pour simplifier on crée une relation parent
-        person1_id = personId;
-        person2_id = newPersonId;
-        type_relation = 'parent';
+        // La nouvelle personne est un enfant de la personne existante  
+        // Créer une seule relation: personne existante -> nouvel enfant
+        await fetch(`${API_URL}/relations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            person1_id: personId,
+            person2_id: newPersonId,
+            type_relation: 'parent'
+          })
+        });
         break;
         
       case 'sibling':
-        // Frère ou sœur - relation bidirectionnelle
-        person1_id = personId;
-        person2_id = newPersonId;
-        type_relation = 'frere'; // On utilise "frere" pour tous les siblings
+        // Frère ou sœur - il faut trouver les parents communs
+        // et créer les relations parent -> nouvelle personne
+        try {
+          const response = await fetch(`${API_URL}/persons/${personId}`);
+          const personData = await response.json();
+          
+          // Récupérer les parents de la personne existante via les relations
+          const relationsResponse = await fetch(`${API_URL}/relations`);
+          const allRelations = await relationsResponse.json();
+          
+          // Trouver les parents (relations où person2_id = personId et type = 'parent')
+          const parentIds = allRelations
+            .filter(r => r.person2_id === personId && r.type_relation === 'parent')
+            .map(r => r.person1_id);
+          
+          console.log('Parents trouvés pour créer fratrie:', parentIds);
+          
+          // Créer une relation parent pour chaque parent trouvé
+          for (const parentId of parentIds) {
+            await fetch(`${API_URL}/relations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                person1_id: parentId,
+                person2_id: newPersonId,
+                type_relation: 'parent'
+              })
+            });
+          }
+          
+          // Si aucun parent trouvé, créer quand même une relation frere pour compatibilité
+          if (parentIds.length === 0) {
+            console.warn('Aucun parent trouvé, création relation frere directe');
+            await fetch(`${API_URL}/relations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                person1_id: personId,
+                person2_id: newPersonId,
+                type_relation: 'frere'
+              })
+            });
+          }
+        } catch (error) {
+          console.error('Erreur lors de la création de la fratrie:', error);
+        }
         break;
         
       case 'spouse':
-        // Conjoint - créer une union
-        person1_id = personId;
-        person2_id = newPersonId;
-        
-        // Créer une union plutôt qu'une relation simple
+        // Conjoint - créer une union plutôt qu'une relation
         const unionResponse = await fetch(`${API_URL}/unions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            person1_id: person1_id,
-            person2_id: person2_id,
+            person1_id: personId,
+            person2_id: newPersonId,
             type_union: 'mariage'
           })
         });
@@ -725,23 +773,9 @@ async function createRelationFromContext(newPersonId, context) {
         if (!unionResponse.ok) {
           console.error('Erreur création union');
         }
-        return; // Sortir, pas besoin de créer une relation
+        break;
     }
     
-    // Créer la relation
-    const response = await fetch(`${API_URL}/relations`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        person1_id: person1_id,
-        person2_id: person2_id,
-        type_relation: type_relation
-      })
-    });
-    
-    if (!response.ok) {
-      console.error('Erreur création relation');
-    }
   } catch (error) {
     console.error('Erreur création relation automatique:', error);
   }
