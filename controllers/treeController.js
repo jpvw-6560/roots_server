@@ -3,6 +3,7 @@
 
 const Person = require('../models/Person');
 const Union = require('../models/Union');
+const Parent = require('../models/Parent');
 
 /**
  * Génère les données de l'arbre généalogique pour une personne
@@ -167,6 +168,26 @@ exports.getStats = async (req, res) => {
 exports.getFullTree = async (req, res) => {
   try {
     const persons = await Person.getAll();
+    const parents = await Parent.findAllWithChildren();
+    
+    // Structure simplifiée
+    res.json({
+      persons,
+      parents
+    });
+  } catch (error) {
+    console.error('Erreur getFullTree:', error);
+    res.status(500).json({ error: 'Erreur lors de la génération de l\'arbre complet' });
+  }
+};
+
+/**
+ * Version legacy pour rétrocompatibilité avec l'ancienne structure unions
+ * @deprecated Utiliser getFullTree à la place
+ */
+exports.getFullTreeLegacy = async (req, res) => {
+  try {
+    const persons = await Person.getAll();
     const unions = await Union.getAll();
     const { pool } = require('../config/database');
     
@@ -191,7 +212,7 @@ exports.getFullTree = async (req, res) => {
       relations // Pour les relations parent/frere qui existent encore
     });
   } catch (error) {
-    console.error('Erreur getFullTree:', error);
-    res.status(500).json({ error: 'Erreur lors de la génération de l\'arbre complet' });
+    console.error('Erreur getFullTreeLegacy:', error);
+    res.status(500).json({ error: 'Erreur lors de la génération de l\'arbre complet (legacy)' });
   }
 };

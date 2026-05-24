@@ -10,7 +10,7 @@ const TREE_CONFIG = {
   horizontalSpacing: 50,  // Entre conjoints (augmenté pour éviter chevauchement)
   siblingSpacing: 120,     // Entre frères/sœurs (augmenté pour clarté)
   generationSpacing: 200, // Entre générations (vertical, augmenté)
-  spouseVerticalOffset: 110, // Conjoint positionné EN DESSOUS (non à côté)
+  spouseVerticalOffset: 20, // Léger décalage vertical des épouses
   marriageSpacing: 150,    // Espace entre les unions multiples
   fontSize: 13,
   fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -123,195 +123,27 @@ function buildCompleteTreeFromPerson(people, relations, unions, unionChildren, c
   const personMap = new Map(people.map(p => [p.id, p]));
   
   // Construire l'arbre par générations
-  const tree = buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap, relations, unions, unionChildren);
+  const tree = buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap, relations);
   
   return {
     root: tree,
     parentsMap,
     childrenMap,
     spousesMap,
-    personMap,
-    unions,
-    unionChildren
+    personMap
   };
 }
 
 /**
- * Construire l'arbre avec structure de générations - VERSION PRATIQUE
- * Construit les fratries complètes à chaque niveau
+ * Construire l'arbre avec structure de générations - VERSION SIMPLIFIÉE
  */
-function buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap, relations, unions, unionChildren) {
-  const processedNodes = new Map(); // personId -> node déjà construit
+function buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenMap, spousesMap, relations) {
+  const visited = new Set();
+  const spouseNodesMap = new Map(); // Pour créer des nœuds complets pour les conjoints
   
-  // Créer un map union_id -> [child_ids] pour accès rapide
-  const unionChildrenMap = new Map();
-  unionChildren.forEach(uc => {
-    if (!unionChildrenMap.has(uc.union_id)) {
-      unionChildrenMap.set(uc.union_id, []);
-    }
-    unionChildrenMap.get(uc.union_id).push(uc.child_id);
-  });
-  
-  // Créer un map (person1_id, person2_id) -> union_id
-  const unionMap = new Map();
-  unions.forEach(u => {
-    const key1 = `${u.person1_id}_${u.person2_id}`;
-    const key2 = `${u.person2_id}_${u.person1_id}`;
-    unionMap.set(key1, u.id);
-    unionMap.set(key2, u.id);
-  });
-  
-  /**
-   * Construire une fratrie complète (tous les frères/sœurs ensemble)
-   */
-  function buildSiblingGroup(personIds, generation) {
-    console.log(`[DEBUG] Construction fratrie de ${personIds.length} personnes à gen ${generation}`);
-    
-    // Trier par date de naissance (du plus ancien au plus récent)
-    const sortedPersonIds = Array.from(personIds).sort((a, b) => {
-      const personA = personMap.get(a);
-      const personB = personMap.get(b);
-      if (!personA || !personB) return 0;
-      
-      const dateA = personA.date_naissance ? new Date(personA.date_naissance) : new Date(0);
-      const dateB = personB.date_naissance ? new Date(personB.date_naissance) : new Date(0);
-      return dateA - dateB;
-    });
-    
-    const siblingNodes = [];
-    
-    sortedPersonIds.forEach(personId => {
-      // Si déjà construit, réutiliser
-      if (processedNodes.has(personId)) {
-        console.log(`[DEBUG] Personne ${personId} déjà construite, réutilisation`);
-        siblingNodes.push(processedNodes.get(personId));
-        return;
-      }
-      
-      const person = personMap.get(personId);
-      if (!person) return;
-      
-      const node = {
-        person: person,
-        generation: generation,
-        spouse: null,
-        spouseNode: null,
-        parents: [],
-        children: [],
-        siblings: [],
-        marriages: [],
-        hasAncestors: false,
-        hasDescendants: false,
-        width: 0,
-        x: 0,
-        y: 0
-      };
-      
-      processedNodes.set(personId, node);
-      siblingNodes.push(node);
-      
-      console.log(`[DEBUG] Nœud créé pour ${person.prenom} (ID ${personId})`);
-    });
-    
-    return siblingNodes;
-  }
-  
-  /**
-   * Construire le conjoint et les enfants d'une personne
-   */
-  function buildSpouseAndChildren(node, generation) {
-    const personId = node.person.id;
-    const mySpouseIds = spousesMap.get(personId) || [];
-    
-    console.log(`[DEBUG] ${node.person.prenom} a ${mySpouseIds.length} conjoint(s)`);
-    
-    if (mySpouseIds.length === 1) {
-      const spouseId = mySpouseIds[0];
-      
-      if (!processedNodes.has(spouseId)) {
-        // Construire le conjoint avec ses ancêtres
-        const spouseNode = buildPersonWithAncestors(spouseId, generation, false);
-        if (spouseNode) {
-          node.spouse = spouseNode.person;
-          node.spouseNode = spouseNode;
-          console.log(`[DEBUG] Conjoint ${spouseNode.person.prenom} ajouté avec ${spouseNode.parents.length} parents`);
-        }
-      } else {
-        node.spouse = personMap.get(spouseId);
-      }
-      
-      // Trouver l'union entre personId et spouseId
-      const unionKey = `${personId}_${spouseId}`;
-      const unionId = unionMap.get(unionKey);
-      const childIds = unionId ? (unionChildrenMap.get(unionId) || []) : [];
-      
-      if (childIds.length > 0) {
-        const childrenNodes = buildSiblingGroup(childIds, generation + 1);
-        node.children = childrenNodes;
-        
-        // Construire récursivement les unions et enfants de chaque enfant
-        childrenNodes.forEach(child => {
-          buildSpouseAndChildren(child, generation + 1);
-        });
-        
-        node.hasDescendants = true;
-      }
-      
-    } else if (mySpouseIds.length > 1) {
-      // Mariages multiples - utiliser union_children pour grouper correctement
-      mySpouseIds.forEach(spouseId => {
-        if (!processedNodes.has(spouseId)) {
-          const spouseNode = buildPersonWithAncestors(spouseId, generation, false);
-          if (spouseNode) {
-            const marriage = {
-              spouse: spouseNode.person,
-              spouseNode: spouseNode,
-              children: [],
-              hasAncestors: (parentsMap.get(spouseId) || []).length > 0
-            };
-            
-            // Trouver l'union entre personId et spouseId
-            const unionKey = `${personId}_${spouseId}`;
-            const unionId = unionMap.get(unionKey);
-            const childIds = unionId ? (unionChildrenMap.get(unionId) || []) : [];
-            
-            if (childIds.length > 0) {
-              const childrenNodes = buildSiblingGroup(childIds, generation + 1);
-              marriage.children = childrenNodes;
-              
-              childrenNodes.forEach(child => {
-                buildSpouseAndChildren(child, generation + 1);
-              });
-            }
-            
-            node.marriages.push(marriage);
-          }
-        }
-      });
-      node.hasDescendants = node.marriages.some(m => m.children.length > 0);
-    } else {
-      // Pas de conjoint, enfants seuls (fille mère par exemple)
-      const myChildIds = childrenMap.get(personId) || [];
-      if (myChildIds.length > 0) {
-        const childrenNodes = buildSiblingGroup(myChildIds, generation + 1);
-        node.children = childrenNodes;
-        
-        childrenNodes.forEach(child => {
-          buildSpouseAndChildren(child, generation + 1);
-        });
-        
-        node.hasDescendants = true;
-      }
-    }
-  }
-  
-  /**
-   * Construire une personne avec ses ancêtres (parents, grands-parents, etc.)
-   */
-  function buildPersonWithAncestors(personId, generation, buildDescendants = true) {
-    if (processedNodes.has(personId)) {
-      return processedNodes.get(personId);
-    }
+  function buildNode(personId, generation, includeAncestors = true, includeSiblings = true) {
+    if (visited.has(personId)) return null;
+    visited.add(personId);
     
     const person = personMap.get(personId);
     if (!person) return null;
@@ -320,10 +152,9 @@ function buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenM
       person: person,
       generation: generation,
       spouse: null,
-      spouseNode: null,
       parents: [],
       children: [],
-      siblings: [],
+      siblings: [], // Fr\u00e8res et s\u0153urs
       marriages: [],
       hasAncestors: false,
       hasDescendants: false,
@@ -332,100 +163,156 @@ function buildGenerationalTree(centralPersonId, personMap, parentsMap, childrenM
       y: 0
     };
     
-    processedNodes.set(personId, node);
-    
-    // Construire les parents et leur fratrie complète
+    // Construire les ancêtres (parents et grands-parents)
     const myParentIds = parentsMap.get(personId) || [];
     if (myParentIds.length > 0) {
-      console.log(`[DEBUG] ${person.prenom} a ${myParentIds.length} parents`);
       node.hasAncestors = true;
       
       const branchState = getBranchState(personId);
       if (!branchState.ancestorsCollapsed) {
-        // Construire uniquement les parents directs (pas toute leur fratrie)
         myParentIds.forEach(parentId => {
-          const parentNode = buildPersonWithAncestors(parentId, generation - 1, false);
-          if (parentNode && !node.parents.find(p => p.person.id === parentId)) {
-            node.parents.push(parentNode);
+          if (!visited.has(parentId)) {
+            const parentNode = buildNode(parentId, generation - 1);
+            if (parentNode) {
+              node.parents.push(parentNode);
+            }
           }
         });
         
-        // Lier les parents entre eux (ils forment un couple)
+        // Lier les parents entre eux s'ils sont mariés
         if (node.parents.length === 2) {
-          // Le premier parent est le parent principal, le second est le conjoint
           node.parents[0].spouse = node.parents[1].person;
-          node.parents[0].spouseNode = node.parents[1];
           node.parents[1].spouse = node.parents[0].person;
-          node.parents[1].spouseNode = node.parents[0];
         }
       }
     }
     
-    // Construire les descendants si demandé
-    if (buildDescendants) {
-      buildSpouseAndChildren(node, generation);
+    // Construire les descendants (conjoints et enfants)
+    const mySpouseIds = spousesMap.get(personId) || [];
+    
+    if (mySpouseIds.length === 0) {
+      // Pas de conjoint, construire les enfants directs
+      const myChildIds = childrenMap.get(personId) || [];
+      myChildIds.forEach(childId => {
+        if (!visited.has(childId)) {
+          const childNode = buildNode(childId, generation + 1);
+          if (childNode) {
+            node.children.push(childNode);
+          }
+        }
+      });
+      node.hasDescendants = node.children.length > 0;
+      
+    } else if (mySpouseIds.length === 1) {
+      // Un seul conjoint
+      const spouseId = mySpouseIds[0];
+      if (!visited.has(spouseId)) {
+        node.spouse = personMap.get(spouseId);
+        if (node.spouse) {
+          visited.add(spouseId);
+        }
+      }
+      
+      // Construire les enfants communs
+      const myChildIds = childrenMap.get(personId) || [];
+      const spouseChildIds = node.spouse ? (childrenMap.get(spouseId) || []) : [];
+      const allChildIds = [...new Set([...myChildIds, ...spouseChildIds])];
+      
+      allChildIds.forEach(childId => {
+        if (!visited.has(childId)) {
+          const childNode = buildNode(childId, generation + 1);
+          if (childNode) {
+            node.children.push(childNode);
+          }
+        }
+      });
+      node.hasDescendants = node.children.length > 0;
+      
+    } else {
+      // Mariages multiples
+      mySpouseIds.forEach(spouseId => {
+        if (!visited.has(spouseId)) {
+          const spouseObj = personMap.get(spouseId);
+          if (spouseObj) {
+            visited.add(spouseId);
+            
+            const marriage = {
+              spouse: spouseObj,
+              children: [],
+              hasAncestors: (parentsMap.get(spouseId) || []).length > 0
+            };
+            
+            // Enfants communs avec ce conjoint
+            const myChildIds = childrenMap.get(personId) || [];
+            const spouseChildIds = childrenMap.get(spouseId) || [];
+            const commonChildIds = myChildIds.filter(cId => spouseChildIds.includes(cId));
+            
+            commonChildIds.forEach(childId => {
+              if (!visited.has(childId)) {
+                const childNode = buildNode(childId, generation + 1);
+                if (childNode) {
+                  marriage.children.push(childNode);
+                }
+              }
+            });
+            
+            node.marriages.push(marriage);
+          }
+        }
+      });
+      
+      node.hasDescendants = node.marriages.some(m => m.children.length > 0);
     }
     
     return node;
   }
   
-  // === DÉMARRAGE : Construire la fratrie de la personne centrale ===
-  console.log('[DEBUG] === Construction de l\'arbre à partir de', centralPersonId);
+  // Construire à partir de la personne centrale
+  const root = buildNode(centralPersonId, 0);
   
-  // 1. Trouver tous les frères/sœurs de la personne centrale
-  const centralSiblingIds = new Set([centralPersonId]);
-  const centralParentIds = parentsMap.get(centralPersonId) || [];
-  
-  centralParentIds.forEach(parentId => {
-    const parentChildIds = childrenMap.get(parentId) || [];
-    parentChildIds.forEach(childId => centralSiblingIds.add(childId));
-  });
-  
-  // Ajouter aussi les relations "frere" directes
-  relations.forEach(rel => {
-    if (rel.type_relation === 'frere') {
-      if (rel.person1_id === centralPersonId) centralSiblingIds.add(rel.person2_id);
-      if (rel.person2_id === centralPersonId) centralSiblingIds.add(rel.person1_id);
-    }
-  });
-  
-  console.log('[DEBUG] Fratrie centrale trouvée:', centralSiblingIds.size, 'personnes');
-  
-  // 2. Construire toute la fratrie centrale
-  const centralSiblingNodes = buildSiblingGroup([...centralSiblingIds], 0);
-  
-  // 3. Pour chaque membre de la fratrie, construire ses ancêtres et descendants
-  centralSiblingNodes.forEach(node => {
-    // Ancêtres
-    const myParentIds = parentsMap.get(node.person.id) || [];
-    if (myParentIds.length > 0) {
-      node.hasAncestors = true;
-      const branchState = getBranchState(node.person.id);
-      
-      if (!branchState.ancestorsCollapsed) {
-        myParentIds.forEach(parentId => {
-          const parentNode = buildPersonWithAncestors(parentId, -1, false);
-          if (parentNode && !node.parents.find(p => p.person.id === parentId)) {
-            node.parents.push(parentNode);
+  // IMPORTANT: Ajouter les frères/sœurs au même niveau
+  // On les récupère de deux façons :
+  // 1. Enfants des mêmes parents (fratrie complète)
+  // 2. Relations "frere" directes (pour fratries sans parents connus)
+  if (root) {
+    const siblingsSet = new Set();
+    
+    // Méthode 1: Collecter tous les enfants des parents communs
+    if (root.parents.length > 0) {
+      root.parents.forEach(parent => {
+        const parentChildIds = childrenMap.get(parent.person.id) || [];
+        parentChildIds.forEach(childId => {
+          if (childId !== centralPersonId) {
+            siblingsSet.add(childId);
           }
         });
-        
-        if (node.parents.length === 2) {
-          node.parents[0].spouse = node.parents[1].person;
-          node.parents[1].spouse = node.parents[0].person;
-        }
-      }
+      });
     }
     
-    // Conjoint et descendants
-    buildSpouseAndChildren(node, 0);
-  });
-  
-  // 4. Lier les siblings entre eux
-  const root = centralSiblingNodes.find(n => n.person.id === centralPersonId);
-  if (root) {
-    root.siblings = centralSiblingNodes.filter(n => n.person.id !== centralPersonId);
-    console.log('[DEBUG] Root trouvée:', root.person.prenom, 'avec', root.siblings.length, 'siblings');
+    // Méthode 2: Ajouter aussi les relations "frere" directes
+    relations.forEach(rel => {
+      if (rel.type_relation === 'frere') {
+        // Si person1 est la personne centrale, person2 est un frère/sœur
+        if (rel.person1_id === centralPersonId && rel.person2_id !== centralPersonId) {
+          siblingsSet.add(rel.person2_id);
+        }
+        // Si person2 est la personne centrale, person1 est un frère/sœur
+        if (rel.person2_id === centralPersonId && rel.person1_id !== centralPersonId) {
+          siblingsSet.add(rel.person1_id);
+        }
+      }
+    });
+    
+    // Créer les nœuds de frères/sœurs et les ajouter à la racine
+    root.siblings = [];
+    siblingsSet.forEach(siblingId => {
+      if (!visited.has(siblingId)) {
+        const siblingNode = buildNode(siblingId, 0); // Même génération
+        if (siblingNode) {
+          root.siblings.push(siblingNode);
+        }
+      }
+    });
   }
   
   return root;
@@ -458,37 +345,38 @@ function calculateNodeWidths(node, visited = new Set()) {
   
   // Calculer les descendants
   if (node.marriages && node.marriages.length > 0) {
-    // Mariages multiples - les conjoints sont à DROITE
+    // Mariages multiples
     node.marriages.forEach(marriage => {
       marriage.children.forEach(child => {
         calculateNodeWidths(child, visited);
       });
     });
     
-    // Largeur = largeur de la personne + largeur de toutes les unions à droite
-    let totalWidth = TREE_CONFIG.nodeWidth; // La personne elle-même
-    
+    // Largeur = somme des largeurs de chaque mariage
+    let totalWidth = 0;
     node.marriages.forEach((marriage, index) => {
-      // Chaque mariage prend la largeur de la maman + les enfants à droite
-      let marriageWidth = TREE_CONFIG.nodeWidth; // La maman
+      let marriageWidth = TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing;
       
       if (marriage.children.length > 0) {
         const childrenWidth = marriage.children.reduce((sum, child, idx) => {
           return sum + child.width + (idx > 0 ? TREE_CONFIG.siblingSpacing : 0);
         }, 0);
-        // Les enfants sont à droite de la maman
-        marriageWidth = TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing + childrenWidth;
+        marriageWidth = Math.max(marriageWidth, childrenWidth);
       }
       
       marriage.width = marriageWidth;
-      totalWidth += marriageWidth + TREE_CONFIG.marriageSpacing;
+      totalWidth += marriageWidth;
+      if (index < node.marriages.length - 1) {
+        totalWidth += TREE_CONFIG.siblingSpacing * 2;
+      }
     });
     
     node.width = totalWidth;
   } else {
     // Cas normal
-    // Conjoint en dessous, donc largeur = une seule carte
-    let coupleWidth = TREE_CONFIG.nodeWidth;
+    let coupleWidth = node.spouse ?
+      TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+      TREE_CONFIG.nodeWidth;
     
     if (node.children.length > 0) {
       node.children.forEach(child => {
@@ -506,23 +394,10 @@ function calculateNodeWidths(node, visited = new Set()) {
     
     // Largeur des ancêtres
     if (node.parents.length > 0) {
-      if (node.parents.length === 2) {
-        // Les parents forment un couple côte à côte
-        const parent1 = node.parents[0];
-        const parent2 = node.parents[1];
-        
-        calculateNodeWidths(parent1, visited);
-        calculateNodeWidths(parent2, visited);
-        
-        // La largeur du couple = largeur des deux parents + espacement
-        const parentsWidth = parent1.width + TREE_CONFIG.horizontalSpacing + parent2.width;
-        node.width = Math.max(node.width, parentsWidth);
-      } else {
-        // Un seul parent
-        const parentNode = node.parents[0];
-        calculateNodeWidths(parentNode, visited);
-        node.width = Math.max(node.width, parentNode.width);
-      }
+      const parentsWidth = node.parents.reduce((sum, parent, index) => {
+        return sum + parent.width + (index > 0 ? TREE_CONFIG.siblingSpacing : 0);
+      }, 0);
+      node.width = Math.max(node.width, parentsWidth);
     }
     
     // Largeur de la fratrie (personne centrale + siblings)
@@ -556,211 +431,140 @@ function positionNodes(node, centerX, generationYMap, visited = new Set()) {
   const y = generationYMap.get(node.generation);
   
   // === CALCUL DE LA LARGEUR DU COUPLE ===
-  // Maintenant que le conjoint est EN DESSOUS, la largeur horizontale est juste une carte
-  const coupleWidth = TREE_CONFIG.nodeWidth;
+  const coupleWidth = node.spouse ?
+    TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+    TREE_CONFIG.nodeWidth;
   
   // === POSITION DE LA PERSONNE PRINCIPALE ===
-  // Centrer la personne sur centerX
+  // Centrer le couple sur centerX
   const coupleStartX = centerX - coupleWidth / 2;
   node.person.x = coupleStartX;
   node.person.y = y;
   
-  // === POSITION DU CONJOINT (EN DESSOUS) ===
+  // === POSITION DU CONJOINT (au même niveau Y) ===
   if (node.spouse) {
-    // Conjoint centré sous la personne principale
-    node.spouse.x = coupleStartX;
+    node.spouse.x = coupleStartX + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
     node.spouse.y = y + TREE_CONFIG.spouseVerticalOffset; // Léger décalage
   }
   
   // === POSITIONNER LES PARENTS AU-DESSUS ===
   if (node.parents.length > 0) {
-    // Les parents forment un couple côte à côte
-    if (node.parents.length === 2) {
-      const parent1 = node.parents[0];
-      const parent2 = node.parents[1];
-      
-      // Largeur du couple
-      const coupleWidth = TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing;
-      const coupleStartX = centerX - coupleWidth / 2;
-      
-      // Positionner les deux parents côte à côte
-      parent1.person.x = coupleStartX;
-      parent1.person.y = generationYMap.get(parent1.generation);
-      
-      parent2.person.x = coupleStartX + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
-      parent2.person.y = parent1.person.y;
-      
-      // Mettre à jour aussi les références spouse
-      parent1.spouse.x = parent2.person.x;
-      parent1.spouse.y = parent2.person.y;
-      parent2.spouse.x = parent1.person.x;
-      parent2.spouse.y = parent1.person.y;
-      
-      // Récursif sur les ancêtres de chaque parent
-      if (parent1.parents.length > 0) {
-        parent1.parents.forEach(grandParent => {
-          const gpCenterX = parent1.person.x + TREE_CONFIG.nodeWidth / 2;
-          positionNodes(grandParent, gpCenterX, generationYMap, visited);
-        });
-      }
-      
-      if (parent2.parents.length > 0) {
-        parent2.parents.forEach(grandParent => {
-          const gpCenterX = parent2.person.x + TREE_CONFIG.nodeWidth / 2;
-          positionNodes(grandParent, gpCenterX, generationYMap, visited);
-        });
-      }
-    } else {
-      // Un seul parent
-      const parentNode = node.parents[0];
-      positionNodes(parentNode, centerX, generationYMap, visited);
-    }
+    const parentsWidth = node.parents.reduce((sum, p, index) => {
+      return sum + p.width + (index > 0 ? TREE_CONFIG.siblingSpacing : 0);
+    }, 0);
+    
+    let parentX = centerX - parentsWidth / 2;
+    node.parents.forEach(parent => {
+      positionNodes(parent, parentX + parent.width / 2, generationYMap, visited);
+      parentX += parent.width + TREE_CONFIG.siblingSpacing;
+    });
   }
   
   // === POSITIONNER LES SIBLINGS (frères/sœurs) ===
   if (node.siblings && node.siblings.length > 0) {
-    console.log(`[DEBUG] Positionnement de ${node.siblings.length} siblings de ${node.person.prenom}`);
+    // Calculer la largeur totale de la fratrie
+    let totalFratrieWidth = coupleWidth; // Le nœud central
     
-    // Créer une fratrie complète (node + siblings) et trier par date de naissance
-    const allSiblings = [node, ...node.siblings];
-    allSiblings.sort((a, b) => {
-      const dateA = a.person.date_naissance ? new Date(a.person.date_naissance) : new Date(0);
-      const dateB = b.person.date_naissance ? new Date(b.person.date_naissance) : new Date(0);
-      return dateA - dateB;
+    node.siblings.forEach(sib => {
+      const sibWidth = sib.spouse ?
+        TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+        TREE_CONFIG.nodeWidth;
+      totalFratrieWidth += TREE_CONFIG.siblingSpacing + sibWidth;
     });
     
-    console.log(`[DEBUG] Fratrie triée:`, allSiblings.map(s => `${s.person.prenom} (${s.person.date_naissance})`).join(', '));
-    
-    // Calculer la largeur totale de la fratrie avec espacement dynamique
-    let totalFratrieWidth = 0;
-    allSiblings.forEach((sib, idx) => {
-      const sibWidth = sib.width || TREE_CONFIG.nodeWidth; // Largeur réelle incluant unions
-      console.log(`[DEBUG] ${sib.person.prenom} largeur: ${sibWidth}`);
-      totalFratrieWidth += sibWidth;
-      
-      if (idx < allSiblings.length - 1) {
-        // Espacement dynamique : petit par défaut, plus grand si complexité
-        const nextSib = allSiblings[idx + 1];
-        const hasComplexity = (sib.marriages && sib.marriages.length > 0) || 
-                              (sib.children && sib.children.length > 0) ||
-                              (nextSib.marriages && nextSib.marriages.length > 0) ||
-                              (nextSib.children && nextSib.children.length > 0);
-        
-        const spacing = hasComplexity ? TREE_CONFIG.siblingSpacing : 30; // 30px minimum
-        totalFratrieWidth += spacing;
-      }
-    });
-    
-    console.log(`[DEBUG] Largeur totale fratrie: ${totalFratrieWidth}`);
-    
-    // Positionner toute la fratrie centrée sur centerX
+    // Recalculer les positions pour centrer toute la fratrie
     let startX = centerX - totalFratrieWidth / 2;
     
-    allSiblings.forEach((sibling, idx) => {
+    // Repositionner le nœud central
+    node.person.x = startX;
+    node.person.y = y;
+    
+    if (node.spouse) {
+      node.spouse.x = startX + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
+      node.spouse.y = y + TREE_CONFIG.spouseVerticalOffset;
+    }
+    
+    startX += coupleWidth;
+    
+    // Positionner chaque sibling
+    node.siblings.forEach(sibling => {
+      startX += TREE_CONFIG.siblingSpacing;
+      
       sibling.person.x = startX;
       sibling.person.y = y;
       
       if (sibling.spouse) {
-        sibling.spouse.x = startX;
+        sibling.spouse.x = startX + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
         sibling.spouse.y = y + TREE_CONFIG.spouseVerticalOffset;
       }
       
-      // Positionner les mariages multiples et enfants de ce sibling
-      if (sibling.marriages && sibling.marriages.length > 0) {
-        // Ce sibling a des mariages multiples, les positionner ici
-        const peigneY = y + 60;
-        let spouseX = sibling.person.x + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
-        
-        sibling.marriages.forEach((marriage, midx) => {
-          marriage.spouse.x = spouseX;
-          marriage.spouse.y = peigneY;
-          
-          // Enfants sous la maman
-          if (marriage.children.length > 0) {
-            const childrenWidth = marriage.children.reduce((sum, c, cidx) => {
-              const cw = TREE_CONFIG.nodeWidth;
-              return sum + cw + (cidx > 0 ? TREE_CONFIG.siblingSpacing : 0);
-            }, 0);
-            
-            const spouseCenterX = marriage.spouse.x + TREE_CONFIG.nodeWidth / 2;
-            let childX = spouseCenterX - childrenWidth / 2;
-            
-            marriage.children.forEach(child => {
-              positionNodes(child, childX + TREE_CONFIG.nodeWidth / 2, generationYMap, visited);
-              childX += TREE_CONFIG.nodeWidth + TREE_CONFIG.siblingSpacing;
-            });
-          }
-          
-          // Avancer pour le prochain conjoint (en laissant la place aux enfants)
-          spouseX += marriage.width + TREE_CONFIG.horizontalSpacing;
-        });
-      } else if (sibling.children && sibling.children.length > 0) {
-        // Enfants normaux (un seul conjoint)
-        const childrenWidth = sibling.children.reduce((sum, c, cidx) => {
-          const cw = TREE_CONFIG.nodeWidth;
-          return sum + cw + (cidx > 0 ? TREE_CONFIG.siblingSpacing : 0);
+      const sibWidth = sibling.spouse ?
+        TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+        TREE_CONFIG.nodeWidth;
+      
+      // Positionner les enfants de ce sibling
+      if (sibling.children && sibling.children.length > 0) {
+        const childrenWidth = sibling.children.reduce((sum, c, idx) => {
+          const cw = c.spouse ?
+            TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+            TREE_CONFIG.nodeWidth;
+          return sum + cw + (idx > 0 ? TREE_CONFIG.siblingSpacing : 0);
         }, 0);
         
-        const siblingCenterX = sibling.person.x + TREE_CONFIG.nodeWidth / 2;
-        let childX = siblingCenterX - childrenWidth / 2;
+        const siblingCenterX = startX + sibWidth / 2;
         
+        let childX = siblingCenterX - childrenWidth / 2;
         sibling.children.forEach(child => {
-          positionNodes(child, childX + TREE_CONFIG.nodeWidth / 2, generationYMap, visited);
-          childX += TREE_CONFIG.nodeWidth + TREE_CONFIG.siblingSpacing;
+          const childWidth = child.spouse ?
+            TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+            TREE_CONFIG.nodeWidth;
+          
+          positionNodes(child, childX + childWidth / 2, generationYMap, visited);
+          childX += childWidth + TREE_CONFIG.siblingSpacing;
         });
       }
       
-      // Avancer pour le prochain sibling avec espacement dynamique
-      const siblingWidth = sibling.width || TREE_CONFIG.nodeWidth;
-      startX += siblingWidth;
-      if (idx < allSiblings.length - 1) {
-        const nextSib = allSiblings[idx + 1];
-        const hasComplexity = (sibling.marriages && sibling.marriages.length > 0) || 
-                              (sibling.children && sibling.children.length > 0) ||
-                              (nextSib.marriages && nextSib.marriages.length > 0) ||
-                              (nextSib.children && nextSib.children.length > 0);
-        
-        const spacing = hasComplexity ? TREE_CONFIG.siblingSpacing : 30; // 30px minimum
-        startX += spacing;
-      }
+      startX += sibWidth;
     });
-  } else {
-    // Pas de siblings, juste positionner le node seul
-    node.person.x = centerX - TREE_CONFIG.nodeWidth / 2;
-    node.person.y = y;
-    
-    if (node.spouse) {
-      node.spouse.x = centerX - TREE_CONFIG.nodeWidth / 2;
-      node.spouse.y = y + TREE_CONFIG.spouseVerticalOffset;
-    }
   }
   
   // === POSITIONNER LES ENFANTS (descendants) ===
   if (node.marriages && node.marriages.length > 0) {
-    // MARIAGES MULTIPLES - Positionner les conjoints À DROITE en ligne horizontale (peigne)
-    // Le papa reste sur sa position, les mamans sont à droite avec un peigne horizontal
-    
-    const peigneY = y + 60; // Ligne du peigne légèrement en dessous
-    let spouseX = node.person.x + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
+    // MARIAGES MULTIPLES - afficher chaque union séparément
+    let marriageX = centerX - node.width / 2;
     
     node.marriages.forEach((marriage, idx) => {
-      // Positionner la maman au début de la zone
-      marriage.spouse.x = spouseX;
-      marriage.spouse.y = peigneY;
+      // Position du conjoint de ce mariage
+      const marriageCoupleWidth = TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing;
+      const marriageCenterX = marriageX + marriage.width / 2;
       
-      // Position des enfants de ce mariage (à droite de la maman)
+      // Si c'est le premier mariage, la personne centrale est déjà positionnée
+      // Sinon, on doit dupliquer visuellement la personne (ou juste montrer le conjoint)
+      
+      marriage.spouse.x = marriageCenterX - marriageCoupleWidth / 2 + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
+      marriage.spouse.y = y + TREE_CONFIG.spouseVerticalOffset;
+      
+      // Position des enfants de ce mariage
       if (marriage.children.length > 0) {
-        // Les enfants commencent à droite de la maman
-        let childX = marriage.spouse.x + TREE_CONFIG.nodeWidth + TREE_CONFIG.horizontalSpacing;
+        const childrenWidth = marriage.children.reduce((sum, c, idx) => {
+          const cw = c.spouse ?
+            TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+            TREE_CONFIG.nodeWidth;
+          return sum + cw + (idx > 0 ? TREE_CONFIG.siblingSpacing : 0);
+        }, 0);
         
+        let childX = marriageCenterX - childrenWidth / 2;
         marriage.children.forEach(child => {
-          positionNodes(child, childX + TREE_CONFIG.nodeWidth / 2, generationYMap, visited);
-          childX += TREE_CONFIG.nodeWidth + TREE_CONFIG.siblingSpacing;
+          const childWidth = child.spouse ?
+            TREE_CONFIG.nodeWidth * 2 + TREE_CONFIG.horizontalSpacing :
+            TREE_CONFIG.nodeWidth;
+          
+          positionNodes(child, childX + childWidth / 2, generationYMap, visited);
+          childX += childWidth + TREE_CONFIG.siblingSpacing;
         });
       }
       
-      // Avancer pour le prochain conjoint (utiliser la largeur calculée du mariage)
-      spouseX += marriage.width + TREE_CONFIG.marriageSpacing;
+      marriageX += marriage.width + TREE_CONFIG.marriageSpacing;
     });
   } else if (node.children.length > 0) {
     // ENFANTS NORMAUX (un seul mariage)
@@ -800,20 +604,10 @@ function createGenerationYMap(root) {
     
     generations.add(node.generation);
     node.parents.forEach(p => collectGenerations(p));
-    
-    // Collecter les générations des ancêtres du conjoint
-    if (node.spouseNode && node.spouseNode.parents) {
-      node.spouseNode.parents.forEach(p => collectGenerations(p));
-    }
-    
     node.children.forEach(c => collectGenerations(c));
     if (node.marriages) {
       node.marriages.forEach(m => {
         if (m.spouse) generations.add(node.generation);
-        // Collecter les générations des ancêtres de chaque conjoint
-        if (m.spouseNode && m.spouseNode.parents) {
-          m.spouseNode.parents.forEach(p => collectGenerations(p));
-        }
         m.children.forEach(c => collectGenerations(c));
       });
     }
@@ -996,27 +790,30 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
   ctx.strokeStyle = TREE_CONFIG.colors.linkColor;
   ctx.lineWidth = 2.5;
   
-  // === LIGNE ENTRE CONJOINTS (maintenant vertical car conjoint EN DESSOUS) ===
+  // === LIGNE ENTRE CONJOINTS (avec léger décalage vertical) ===
   if (node.spouse) {
-    // Point de départ : bas centre de la personne principale
-    const personCenterX = node.person.x + TREE_CONFIG.nodeWidth / 2;
-    const personBottomY = node.person.y + TREE_CONFIG.nodeHeight;
+    // Point de départ : milieu droit de la personne principale
+    const personRightX = node.person.x + TREE_CONFIG.nodeWidth;
+    const personCenterY = node.person.y + TREE_CONFIG.nodeHeight / 2;
     
-    // Point d'arrivée : haut centre du conjoint
-    const spouseCenterX = node.spouse.x + TREE_CONFIG.nodeWidth / 2;
-    const spouseTopY = node.spouse.y;
+    // Point d'arrivée : milieu gauche du conjoint (légèrement décalé)
+    const spouseLeftX = node.spouse.x;
+    const spouseCenterY = node.spouse.y + TREE_CONFIG.nodeHeight / 2;
     
-    // Ligne verticale simple
-    const midY = (personBottomY + spouseTopY) / 2;
+    // Ligne avec connexion
+    const midX = (personRightX + spouseLeftX) / 2;
+    const midY = (personCenterY + spouseCenterY) / 2;
     
     ctx.beginPath();
-    ctx.moveTo(personCenterX, personBottomY);
-    ctx.lineTo(personCenterX, spouseTopY);
+    ctx.moveTo(personRightX, personCenterY);
+    ctx.lineTo(midX, personCenterY);
+    ctx.lineTo(midX, spouseCenterY);
+    ctx.lineTo(spouseLeftX, spouseCenterY);
     ctx.stroke();
     
     // Symbole de mariage au centre
     ctx.beginPath();
-    ctx.arc(personCenterX, midY, 12, 0, Math.PI * 2);
+    ctx.arc(midX, midY, 12, 0, Math.PI * 2);
     ctx.fillStyle = '#FFD700'; // Or
     ctx.fill();
     ctx.strokeStyle = '#FFA500';
@@ -1027,34 +824,11 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
     ctx.font = 'bold 16px ' + TREE_CONFIG.fontFamily;
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
-    ctx.fillText('💍', personCenterX, midY + 5);
+    ctx.fillText('💍', midX, midY + 5);
     
     // Restaurer le style pour les autres lignes
     ctx.strokeStyle = TREE_CONFIG.colors.linkColor;
     ctx.lineWidth = 2.5;
-    
-    // Dessiner les liens vers les parents du conjoint si présents
-    if (node.spouseNode && node.spouseNode.parents && node.spouseNode.parents.length > 0) {
-      const spouseTopY = node.spouse.y;
-      const spouseCenterX = node.spouse.x + TREE_CONFIG.nodeWidth / 2;
-      
-      node.spouseNode.parents.forEach(parent => {
-        const parentBottomY = parent.person.y + TREE_CONFIG.nodeHeight;
-        const parentCenterX = parent.spouse ?
-          (parent.person.x + parent.spouse.x + TREE_CONFIG.nodeWidth) / 2 :
-          parent.person.x + TREE_CONFIG.nodeWidth / 2;
-        
-        ctx.beginPath();
-        ctx.moveTo(parentCenterX, parentBottomY);
-        ctx.lineTo(parentCenterX, (parentBottomY + spouseTopY) / 2);
-        ctx.lineTo(spouseCenterX, (parentBottomY + spouseTopY) / 2);
-        ctx.lineTo(spouseCenterX, spouseTopY);
-        ctx.stroke();
-        
-        // Récursif pour les ancêtres du conjoint
-        drawTreeLinks(ctx, parent, visited);
-      });
-    }
   }
   
   // Liens vers parents avec gestion de la fratrie
@@ -1069,19 +843,9 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
       
       allSiblings.forEach(sib => {
         const sibLeftX = sib.person.x;
-        // Pour rightmostX, prendre en compte les mariages multiples
-        let sibRightX = sib.person.x + TREE_CONFIG.nodeWidth;
-        
-        // Si le sibling a un conjoint simple (en dessous)
-        if (sib.spouse && !sib.marriages) {
-          sibRightX = Math.max(sibRightX, sib.spouse.x + TREE_CONFIG.nodeWidth);
-        }
-        
-        // Si le sibling a des mariages multiples (à droite)
-        if (sib.marriages && sib.marriages.length > 0) {
-          const lastMarriage = sib.marriages[sib.marriages.length - 1];
-          sibRightX = lastMarriage.spouse.x + TREE_CONFIG.nodeWidth;
-        }
+        const sibRightX = sib.spouse ? 
+          sib.spouse.x + TREE_CONFIG.nodeWidth : 
+          sib.person.x + TREE_CONFIG.nodeWidth;
         
         leftmostX = Math.min(leftmostX, sibLeftX);
         rightmostX = Math.max(rightmostX, sibRightX);
@@ -1108,16 +872,13 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
       // Ligne verticale du centre de la fratrie vers les parents
       const fratrieCenterX = (leftmostX + rightmostX) / 2;
       
-      // Déterminer le point de départ des parents (couple côte à côte)
+      // Déterminer le point de départ des parents (en tenant compte du conjoint décalé)
       let parentBottomY, parentCenterX;
-      if (node.parents.length === 2) {
-        // Les deux parents sont côte à côte
-        const parent1X = node.parents[0].person.x;
-        const parent2X = node.parents[0].spouse.x;
-        parentCenterX = (parent1X + parent2X + TREE_CONFIG.nodeWidth) / 2; // Centre du couple
-        parentBottomY = node.parents[0].person.y + TREE_CONFIG.nodeHeight;
+      if (node.parents[0].spouse) {
+        // Le conjoint est décalé vers le bas
+        parentBottomY = node.parents[0].spouse.y + TREE_CONFIG.nodeHeight;
+        parentCenterX = (node.parents[0].person.x + node.parents[0].spouse.x + TREE_CONFIG.nodeWidth) / 2;
       } else {
-        // Un seul parent
         parentBottomY = node.parents[0].person.y + TREE_CONFIG.nodeHeight;
         parentCenterX = node.parents[0].person.x + TREE_CONFIG.nodeWidth / 2;
       }
@@ -1129,25 +890,6 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
       ctx.lineTo(parentCenterX, parentBottomY);
       ctx.stroke();
       
-      // Dessiner une ligne horizontale entre les deux parents si couple
-      if (node.parents.length === 2) {
-        const parent1CenterY = node.parents[0].person.y + TREE_CONFIG.nodeHeight / 2;
-        const parent1RightX = node.parents[0].person.x + TREE_CONFIG.nodeWidth;
-        const parent2LeftX = node.parents[0].spouse.x;
-        
-        ctx.beginPath();
-        ctx.moveTo(parent1RightX, parent1CenterY);
-        ctx.lineTo(parent2LeftX, parent1CenterY);
-        ctx.stroke();
-        
-        // Dessiner l'icône de mariage au centre
-        const marriageCenterX = (parent1RightX + parent2LeftX) / 2;
-        ctx.font = 'bold 16px ' + TREE_CONFIG.fontFamily;
-        ctx.fillStyle = '#fff';
-        ctx.textAlign = 'center';
-        ctx.fillText('💍', marriageCenterX, parent1CenterY + 5);
-      }
-      
       // Récursif sur les parents
       node.parents.forEach(parent => {
         drawTreeLinks(ctx, parent, visited);
@@ -1155,35 +897,15 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
       
       // Récursif sur les siblings (pour leurs descendants)
       node.siblings.forEach(sibling => {
-        // Vérifier si ce sibling a des mariages multiples
-        if (sibling.marriages && sibling.marriages.length > 0) {
-          // Ce sibling a des mariages multiples, dessiner le peigne horizontal et les liens
-          const personRightX = sibling.person.x + TREE_CONFIG.nodeWidth;
-          const personCenterY = sibling.person.y + TREE_CONFIG.nodeHeight / 2;
-          
-          const lastSpouse = sibling.marriages[sibling.marriages.length - 1].spouse;
-          const lastSpouseRightX = lastSpouse.x + TREE_CONFIG.nodeWidth;
-          
-          // Ligne horizontale du peigne (déjà dessinée ailleurs, mais on s'assure)
-          // Pas besoin de redessiner ici
-          
-          // Pour chaque mariage, les liens ont déjà été dessinés par le code des mariages multiples
-          // Juste récursif sur les enfants
-          sibling.marriages.forEach(marriage => {
-            marriage.children.forEach(child => {
-              drawTreeLinks(ctx, child, visited);
-            });
-          });
-          
-        } else if (sibling.children && sibling.children.length > 0) {
-          // Dessiner les liens vers les enfants de ce sibling (structure en peigne)
+        // Dessiner les liens vers les enfants de ce sibling (structure en peigne)
+        if (sibling.children && sibling.children.length > 0) {
           // Déterminer le point de départ (bas du couple)
           let siblingBottomY, siblingCenterX;
           
           if (sibling.spouse) {
-            // Le conjoint est EN DESSOUS
+            // Le conjoint est décalé vers le bas
             siblingBottomY = sibling.spouse.y + TREE_CONFIG.nodeHeight;
-            siblingCenterX = sibling.person.x + TREE_CONFIG.nodeWidth / 2;
+            siblingCenterX = (sibling.person.x + sibling.spouse.x + TREE_CONFIG.nodeWidth) / 2;
           } else {
             siblingBottomY = sibling.person.y + TREE_CONFIG.nodeHeight;
             siblingCenterX = sibling.person.x + TREE_CONFIG.nodeWidth / 2;
@@ -1225,25 +947,15 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
       });
     } else {
       // Pas de siblings, logique normale
-      // IMPORTANT : Le lien doit pointer vers la personne centrale
+      // IMPORTANT : Le lien doit pointer vers la personne centrale, pas le centre du couple
       const childTopY = node.person.y;
-      const childCenterX = node.person.x + TREE_CONFIG.nodeWidth / 2;
+      const childCenterX = node.person.x + TREE_CONFIG.nodeWidth / 2; // Centre de la personne, pas du couple
       
-      if (node.parents.length > 0) {
-        // Les parents forment un couple côte à côte
-        const parentNode = node.parents[0];
-        let parentBottomY, parentCenterX;
-        
-        if (node.parents.length === 2) {
-          // Les deux parents sont côte à côte
-          const parent1X = parentNode.person.x;
-          const parent2X = parentNode.spouse.x;
-          parentCenterX = (parent1X + parent2X + TREE_CONFIG.nodeWidth) / 2; // Centre du couple
-          parentBottomY = parentNode.person.y + TREE_CONFIG.nodeHeight;
-        } else {
-          parentBottomY = parentNode.person.y + TREE_CONFIG.nodeHeight;
-          parentCenterX = parentNode.person.x + TREE_CONFIG.nodeWidth / 2;
-        }
+      node.parents.forEach(parent => {
+        const parentBottomY = parent.person.y + TREE_CONFIG.nodeHeight;
+        const parentCenterX = parent.spouse ?
+          (parent.person.x + parent.spouse.x + TREE_CONFIG.nodeWidth) / 2 :
+          parent.person.x + TREE_CONFIG.nodeWidth / 2;
         
         ctx.beginPath();
         ctx.moveTo(parentCenterX, parentBottomY);
@@ -1252,66 +964,39 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
         ctx.lineTo(childCenterX, childTopY);
         ctx.stroke();
         
-        // Dessiner une ligne horizontale entre les deux parents si couple
-        if (node.parents.length === 2) {
-          const parent1CenterY = parentNode.person.y + TREE_CONFIG.nodeHeight / 2;
-          const parent1RightX = parentNode.person.x + TREE_CONFIG.nodeWidth;
-          const parent2LeftX = parentNode.spouse.x;
-          
-          ctx.beginPath();
-          ctx.moveTo(parent1RightX, parent1CenterY);
-          ctx.lineTo(parent2LeftX, parent1CenterY);
-          ctx.stroke();
-          
-          // Dessiner l'icône de mariage au centre
-          const marriageCenterX = (parent1RightX + parent2LeftX) / 2;
-          ctx.font = 'bold 16px ' + TREE_CONFIG.fontFamily;
-          ctx.fillStyle = '#fff';
-          ctx.textAlign = 'center';
-          ctx.fillText('💍', marriageCenterX, parent1CenterY + 5);
-        }
-        
-        // Récursif seulement sur le parent principal
-        drawTreeLinks(ctx, parentNode, visited);
-        
-        // Ne pas appeler récursivement sur le second parent (conjoint)
-        // car il n'a pas d'enfants directs, seulement des ancêtres
-      }
+        // Récursif
+        drawTreeLinks(ctx, parent, visited);
+      });
     }
   }
   
   // Liens vers enfants
   if (node.marriages && node.marriages.length > 0) {
-    // Mariages multiples - Structure en PEIGNE horizontal
-    const personRightX = node.person.x + TREE_CONFIG.nodeWidth;
+    // Mariages multiples - chaque mariage avec son icône alliance
+    const personCenterX = node.person.x + TREE_CONFIG.nodeWidth / 2;
     const personCenterY = node.person.y + TREE_CONFIG.nodeHeight / 2;
+    const personBottomY = node.person.y + TREE_CONFIG.nodeHeight;
     
-    // Trouver le conjoint le plus à droite pour dessiner la ligne horizontale du peigne
-    const lastSpouse = node.marriages[node.marriages.length - 1].spouse;
-    const lastSpouseRightX = lastSpouse.x + TREE_CONFIG.nodeWidth;
-    
-    // Ligne horizontale du peigne (du papa au dernier conjoint)
-    const peigneY = personCenterY;
-    ctx.beginPath();
-    ctx.moveTo(personRightX, peigneY);
-    ctx.lineTo(lastSpouseRightX, peigneY);
-    ctx.stroke();
-    
-    // Pour chaque mariage, dessiner la ligne verticale vers la maman
     node.marriages.forEach(marriage => {
+      const spouseRightX = node.person.x + TREE_CONFIG.nodeWidth;
+      const spouseLeftX = marriage.spouse.x;
       const spouseCenterX = marriage.spouse.x + TREE_CONFIG.nodeWidth / 2;
-      const spouseTopY = marriage.spouse.y;
+      const spouseCenterY = marriage.spouse.y + TREE_CONFIG.nodeHeight / 2;
       
-      // Ligne verticale du peigne vers la maman
+      // Ligne horizontale entre la personne et ce conjoint avec icône alliance
+      const midX = (spouseRightX + spouseLeftX) / 2;
+      const midY = (personCenterY + spouseCenterY) / 2;
+      
       ctx.beginPath();
-      ctx.moveTo(spouseCenterX, peigneY);
-      ctx.lineTo(spouseCenterX, spouseTopY);
+      ctx.moveTo(spouseRightX, personCenterY);
+      ctx.lineTo(midX, personCenterY);
+      ctx.lineTo(midX, spouseCenterY);
+      ctx.lineTo(spouseLeftX, spouseCenterY);
       ctx.stroke();
       
-      // Icône alliance 💍 sur la ligne verticale
-      const allianceY = (peigneY + spouseTopY) / 2;
+      // Icône alliance 💍 pour ce mariage
       ctx.beginPath();
-      ctx.arc(spouseCenterX, allianceY, 12, 0, Math.PI * 2);
+      ctx.arc(midX, midY, 12, 0, Math.PI * 2);
       ctx.fillStyle = '#FFD700'; // Or
       ctx.fill();
       ctx.strokeStyle = '#FFA500';
@@ -1321,31 +1006,33 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
       ctx.font = 'bold 16px ' + TREE_CONFIG.fontFamily;
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
-      ctx.fillText('💍', spouseCenterX, allianceY + 5);
+      ctx.fillText('💍', midX, midY + 5);
       
       // Restaurer le style
       ctx.strokeStyle = TREE_CONFIG.colors.linkColor;
       ctx.lineWidth = 2.5;
       
-      // Liens vers enfants de ce mariage (à droite de la maman)
+      // Liens vers enfants de ce mariage
       if (marriage.children.length > 0) {
-        const spouseBottomY = marriage.spouse.y + TREE_CONFIG.nodeHeight;
-        const spouseRightX = marriage.spouse.x + TREE_CONFIG.nodeWidth;
+        const coupleBottomY = marriage.spouse.y + TREE_CONFIG.nodeHeight;
         const firstChildY = marriage.children[0].person.y;
-        const linkMidY = (spouseBottomY + firstChildY) / 2;
+        const linkMidY = (coupleBottomY + firstChildY) / 2;
         
-        // Ligne horizontale de la maman vers le premier enfant
-        const firstChildX = marriage.children[0].person.x + TREE_CONFIG.nodeWidth / 2;
+        // Ligne verticale du couple
         ctx.beginPath();
-        ctx.moveTo(spouseRightX, spouseBottomY + TREE_CONFIG.nodeHeight / 4);
-        ctx.lineTo(firstChildX, spouseBottomY + TREE_CONFIG.nodeHeight / 4);
-        ctx.lineTo(firstChildX, linkMidY);
+        ctx.moveTo(spouseCenterX, coupleBottomY);
+        ctx.lineTo(spouseCenterX, linkMidY);
         ctx.stroke();
         
-        // Ligne horizontale entre enfants (barre du peigne)
+        // Ligne horizontale entre enfants
         if (marriage.children.length > 1) {
+          const firstChildX = marriage.children[0].spouse ?
+            (marriage.children[0].person.x + marriage.children[0].spouse.x + TREE_CONFIG.nodeWidth) / 2 :
+            marriage.children[0].person.x + TREE_CONFIG.nodeWidth / 2;
           const lastChild = marriage.children[marriage.children.length - 1];
-          const lastChildX = lastChild.person.x + TREE_CONFIG.nodeWidth / 2;
+          const lastChildX = lastChild.spouse ?
+            (lastChild.person.x + lastChild.spouse.x + TREE_CONFIG.nodeWidth) / 2 :
+            lastChild.person.x + TREE_CONFIG.nodeWidth / 2;
           
           ctx.beginPath();
           ctx.moveTo(firstChildX, linkMidY);
@@ -1353,9 +1040,11 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
           ctx.stroke();
         }
         
-        // Lignes vers chaque enfant (dents du peigne)
+        // Lignes vers chaque enfant
         marriage.children.forEach(child => {
-          const childCenterX = child.person.x + TREE_CONFIG.nodeWidth / 2;
+          const childCenterX = child.spouse ?
+            (child.person.x + child.spouse.x + TREE_CONFIG.nodeWidth) / 2 :
+            child.person.x + TREE_CONFIG.nodeWidth / 2;
           
           ctx.beginPath();
           ctx.moveTo(childCenterX, linkMidY);
@@ -1373,10 +1062,10 @@ function drawTreeLinks(ctx, node, visited = new Set()) {
     let coupleBottomY, coupleCenterX;
     
     if (node.spouse) {
-      // Le conjoint est EN DESSOUS, donc on part du bas du conjoint
+      // Le conjoint est décalé vers le bas, donc on part du bas du conjoint
       coupleBottomY = node.spouse.y + TREE_CONFIG.nodeHeight;
-      // Le centre est celui de la personne (conjoint aligné verticalement)
-      coupleCenterX = node.person.x + TREE_CONFIG.nodeWidth / 2;
+      // Le centre est entre la personne et le conjoint
+      coupleCenterX = (node.person.x + node.spouse.x + TREE_CONFIG.nodeWidth) / 2;
     } else {
       // Pas de conjoint, on part du bas de la personne
       coupleBottomY = node.person.y + TREE_CONFIG.nodeHeight;
@@ -1436,30 +1125,12 @@ function collectAllNodesFromTree(node, allNodes = [], allSpouses = [], visited =
     allSpouses.push(node.spouse);
   }
   
-  // Collecter les ancêtres du conjoint si présents
-  if (node.spouseNode) {
-    console.log(`[DEBUG] Collecte des ancêtres du conjoint ${node.spouse.prenom}, parents:`, node.spouseNode.parents.length);
-    // Le spouseNode contient les ancêtres du conjoint
-    if (node.spouseNode.parents && node.spouseNode.parents.length > 0) {
-      node.spouseNode.parents.forEach(p => {
-        collectAllNodesFromTree(p, allNodes, allSpouses, visited);
-      });
-    }
-    // Collecter aussi les siblings du conjoint
-    if (node.spouseNode.siblings && node.spouseNode.siblings.length > 0) {
-      node.spouseNode.siblings.forEach(sibling => {
-        collectAllNodesFromTree(sibling, allNodes, allSpouses, visited);
-      });
-    }
-  }
-  
   node.parents.forEach(p => {
     collectAllNodesFromTree(p, allNodes, allSpouses, visited);
   });
   
   // IMPORTANT: Collecter aussi les siblings (frères/sœurs)
   if (node.siblings && node.siblings.length > 0) {
-    console.log(`[DEBUG] Collection de ${node.siblings.length} siblings de ${node.person.prenom}`);
     node.siblings.forEach(sibling => {
       collectAllNodesFromTree(sibling, allNodes, allSpouses, visited);
     });
@@ -1469,19 +1140,6 @@ function collectAllNodesFromTree(node, allNodes = [], allSpouses = [], visited =
     node.marriages.forEach(m => {
       if (m.spouse) {
         allSpouses.push(m.spouse);
-      }
-      // Collecter les ancêtres de chaque conjoint dans les mariages multiples
-      if (m.spouseNode) {
-        if (m.spouseNode.parents && m.spouseNode.parents.length > 0) {
-          m.spouseNode.parents.forEach(p => {
-            collectAllNodesFromTree(p, allNodes, allSpouses, visited);
-          });
-        }
-        if (m.spouseNode.siblings && m.spouseNode.siblings.length > 0) {
-          m.spouseNode.siblings.forEach(sibling => {
-            collectAllNodesFromTree(sibling, allNodes, allSpouses, visited);
-          });
-        }
       }
       m.children.forEach(c => collectAllNodesFromTree(c, allNodes, allSpouses, visited));
     });

@@ -113,3 +113,7 @@ Port 3007 déjà utilisé:
 Base de données non créée:
 → Se connecter à MySQL et créer manuellement:
   CREATE DATABASE neogenea;
+
+http://192.168.129.50/adminer/?server=192.168.129.50%3A3306&username=root&db=neogenea&select=relations
+
+pw: Jpvw1953!

@@ -15,6 +15,8 @@ const relationsRoutes = require('../routes/relations');
 const mediasRoutes = require('../routes/medias');
 const treeRoutes = require('../routes/tree');
 const unionsRoutes = require('../routes/unions');
+const parentsRoutes = require('../routes/parents');
+const debugRoutes = require('../routes/debug');
 
 const app = express();
 
@@ -33,6 +35,8 @@ app.use('/api/relations', relationsRoutes);
 app.use('/api/medias', mediasRoutes);
 app.use('/api/tree', treeRoutes);
 app.use('/api/unions', unionsRoutes);
+app.use('/api/parents', parentsRoutes);
+app.use('/api/debug', debugRoutes);
 
 // Route pour la configuration
 app.get('/api/config', (req, res) => {
@@ -69,7 +73,7 @@ app.use((err, req, res, next) => {
 // Initialisation de la base de données et démarrage du serveur
 async function startServer() {
   try {
-    await initDatabase();
+    // await initDatabase(); // Désactivé - tables créées manuellement avec scripts/init-database-with-parents.sql
     console.log('✅ Base de données prête');
     
     // Écoute sur toutes les interfaces (0.0.0.0) pour permettre l'accès distant

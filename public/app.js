@@ -1100,6 +1100,65 @@ async function generateCompleteTree() {
   }
 }
 
+/**
+ * Exporter la structure de l'arbre en JSON
+ */
+async function exportTreeJSON() {
+  console.log('=== Export JSON de la structure ===');
+  
+  const personSelect = document.getElementById('tree-person-select');
+  const selectedPersonId = personSelect ? parseInt(personSelect.value) : null;
+  
+  if (!selectedPersonId) {
+    alert('Veuillez sélectionner une personne centrale');
+    return;
+  }
+  
+  try {
+    // Récupérer les données (ou utiliser celles en mémoire)
+    let allPeople, unions, unionChildren, relations;
+    
+    if (treeData.people && treeData.unions) {
+      allPeople = treeData.people;
+      unions = treeData.unions;
+      unionChildren = treeData.unionChildren;
+      relations = treeData.relations;
+    } else {
+      const response = await fetch(`${API_URL}/tree`);
+      const treeApiData = await response.json();
+      allPeople = treeApiData.persons || [];
+      unions = treeApiData.unions || [];
+      unionChildren = treeApiData.unionChildren || [];
+      relations = treeApiData.relations || [];
+    }
+    
+    // Appeler la fonction d'export du module tree-canvas-v2.js
+    const jsonStructure = exportTreeStructureAsJSON(allPeople, relations, unions, unionChildren, selectedPersonId);
+    
+    // Afficher le JSON dans la console
+    console.log('=== STRUCTURE ARBRE JSON ===');
+    console.log(JSON.stringify(jsonStructure, null, 2));
+    
+    // Créer un blob et le télécharger
+    const jsonString = JSON.stringify(jsonStructure, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `arbre-structure-${selectedPersonId}-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    alert('Fichier JSON téléchargé ! Consultez aussi la console (F12) pour voir la structure.');
+    
+  } catch (error) {
+    console.error('Erreur export JSON:', error);
+    alert('Erreur lors de l\'export JSON: ' + error.message);
+  }
+}
+
 function findRootPeople(people, relations) {
   // Trouver toutes les personnes qui sont enfants
   const childrenIds = new Set();

@@ -73,15 +73,15 @@ class Person {
    */
   static async create(personData) {
     const { nom, prenom, nom_jeune_fille, sexe, date_naissance, lieu_naissance, 
-            date_deces, lieu_deces, biographie, vivant } = personData;
+            date_deces, lieu_deces, biographie, vivant, id_parents } = personData;
     
     const [result] = await pool.query(`
       INSERT INTO persons (nom, prenom, nom_jeune_fille, sexe, date_naissance, 
-                          lieu_naissance, date_deces, lieu_deces, biographie, vivant)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          lieu_naissance, date_deces, lieu_deces, biographie, vivant, id_parents)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [nom, prenom, nom_jeune_fille || null, sexe, date_naissance || null, 
         lieu_naissance || null, date_deces || null, lieu_deces || null, 
-        biographie || null, vivant !== false]);
+        biographie || null, vivant !== false, id_parents || null]);
     
     return result.insertId;
   }
@@ -91,17 +91,17 @@ class Person {
    */
   static async update(id, personData) {
     const { nom, prenom, nom_jeune_fille, sexe, date_naissance, lieu_naissance,
-            date_deces, lieu_deces, biographie, vivant } = personData;
+            date_deces, lieu_deces, biographie, vivant, id_parents } = personData;
     
     const [result] = await pool.query(`
       UPDATE persons 
       SET nom = ?, prenom = ?, nom_jeune_fille = ?, sexe = ?, 
           date_naissance = ?, lieu_naissance = ?, date_deces = ?, 
-          lieu_deces = ?, biographie = ?, vivant = ?
+          lieu_deces = ?, biographie = ?, vivant = ?, id_parents = ?
       WHERE id = ?
     `, [nom, prenom, nom_jeune_fille || null, sexe, date_naissance || null,
         lieu_naissance || null, date_deces || null, lieu_deces || null,
-        biographie || null, vivant !== false, id]);
+        biographie || null, vivant !== false, id_parents || null, id]);
     
     return result.affectedRows > 0;
   }
